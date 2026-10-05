@@ -190,7 +190,7 @@ $('export').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(companies, null, 2)], { type: 'application/json' });
   const link = el('a');
   link.href = URL.createObjectURL(blob);
-  link.download = 'research-board.json';
+  link.download = `research-board-${new Date().toLocaleDateString('sv-SE')}.json`;
   link.click();
   URL.revokeObjectURL(link.href);
 });
