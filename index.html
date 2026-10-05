@@ -66,6 +66,8 @@
 <header>
   <h1>Firmen-Research-Board</h1>
   <input type="search" id="search" placeholder="Suchen …" aria-label="Suchen">
+  <button id="import">Import (JSON)</button>
+  <input type="file" id="importFile" accept="application/json,.json" hidden>
   <button id="export">Export (JSON)</button>
   <button id="add" class="primary">+ Unternehmen</button>
 </header>
@@ -109,7 +111,8 @@ const STORAGE_KEY = 'research-board-v1';
 const LONG_PRESS_MS = 400;
 const SCROLL_EDGE = 60;
 const $ = id => document.getElementById(id);
-const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const stars = n =>'★'.repeat(n) + '☆'.repeat(5 - n);
 const STATUSES = [...document.querySelectorAll('.column')].map(column => column.dataset.status);
 
 let companies = load();
@@ -252,7 +255,7 @@ $('form').addEventListener('submit', () => {
   };
   let company = companies.find(c => c.id === editingId);
   if (company) Object.assign(company, data);
-  else companies.push(company = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ...data });
+  else companies.push(company = { id: newId(), ...data });
   editingId = company.id;
   save();
   render();
@@ -285,6 +288,44 @@ $('export').addEventListener('click', () => {
   link.download = `research-board-${new Date().toLocaleDateString('sv-SE')}.json`;
   link.click();
   URL.revokeObjectURL(link.href);
+});
+
+function normalize(entry) {
+  if (!entry || typeof entry.name !== 'string' || !entry.name.trim()) return null;
+  return {
+    id: typeof entry.id === 'string' && entry.id ? entry.id : newId(),
+    name: entry.name.trim(),
+    sector: typeof entry.sector === 'string' ? entry.sector.trim() : '',
+    status: STATUSES.includes(entry.status) ? entry.status : 'offen',
+    rating: Math.min(5, Math.max(0, Math.round(+entry.rating) || 0)),
+    notes: typeof entry.notes === 'string' ? entry.notes.trim() : '',
+  };
+}
+
+function importCompanies(entries) {
+  const incoming = new Map(entries.map(normalize).filter(Boolean).map(c => [c.id, c]));
+  if (!incoming.size) return alert('Die Datei enthält keine gültigen Unternehmen.');
+  const known = new Set(companies.map(c => c.id));
+  const updated = [...incoming.keys()].filter(id => known.has(id)).length;
+  const added = incoming.size - updated;
+  const skipped = entries.length - incoming.size;
+  if (!confirm(`Import: ${added} neu, ${updated} bestehende werden überschrieben` +
+    (skipped ? `, ${skipped} ungültige oder doppelte übersprungen` : '') + '. Fortfahren?')) return;
+  companies = companies.map(c => incoming.get(c.id) || c).concat([...incoming.values()].filter(c => !known.has(c.id)));
+  save();
+  render();
+  $('live').textContent = `${added} Unternehmen importiert, ${updated} aktualisiert`;
+}
+
+$('import').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  let entries;
+  try { entries = JSON.parse(await file.text()); } catch {}
+  if (Array.isArray(entries)) importCompanies(entries);
+  else alert('Diese Datei ist kein Export des Research-Boards.');
 });
 
 function markDrop(column, y) {
