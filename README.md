@@ -13,7 +13,7 @@ Ein kleines Kanban-Board, um Unternehmen während der Recherche zu verfolgen. Di
 - Karten per Drag & Drop zwischen den Spalten verschieben
 - Karte anklicken, um sie zu bearbeiten oder zu löschen
 - Suche über Name, Branche und Notizen
-- Export aller Einträge als `research-board.json`
+- Export aller Einträge als JSON-Datei mit Datum im Namen, z. B. `research-board-2026-10-05.json`
 - Helles und dunkles Design, je nach Systemeinstellung
 
 ## Daten
