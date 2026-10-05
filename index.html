@@ -105,6 +105,7 @@
 <script>
 const STORAGE_KEY = 'research-board-v1';
 const LONG_PRESS_MS = 400;
+const SCROLL_EDGE = 60;
 const $ = id => document.getElementById(id);
 const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);
 const STATUSES = [...document.querySelectorAll('.column')].map(column => column.dataset.status);
@@ -307,7 +308,7 @@ document.querySelectorAll('.column').forEach(column => {
 });
 
 const board = document.querySelector('main');
-const columnAt = touch => document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.column');
+const columnAt = ({ x, y }) => document.elementFromPoint(x, y)?.closest('.column');
 
 function endTouchDrag() {
   if (!touchDrag) return;
@@ -325,29 +326,45 @@ board.addEventListener('touchstart', e => {
   const drag = touchDrag = { card, x, y, active: false, timer: setTimeout(() => {
     drag.active = true;
     card.classList.add('dragging');
+    requestAnimationFrame(() => autoScroll(drag));
   }, LONG_PRESS_MS) };
 }, { passive: true });
 
+function markTouchDrop() {
+  const column = columnAt(touchDrag);
+  if (column) markDrop(column, touchDrag.y);
+  else clearDropMarks();
+}
+
+function autoScroll(drag) {
+  if (drag !== touchDrag) return;
+  const overTop = SCROLL_EDGE - drag.y, overBottom = drag.y - (innerHeight - SCROLL_EDGE);
+  const before = scrollY;
+  if (overTop > 0) scrollBy(0, -Math.min(overTop, SCROLL_EDGE) / 6);
+  else if (overBottom > 0) scrollBy(0, Math.min(overBottom, SCROLL_EDGE) / 6);
+  if (scrollY !== before) markTouchDrop();
+  requestAnimationFrame(() => autoScroll(drag));
+}
+
 board.addEventListener('touchmove', e => {
   if (!touchDrag) return;
-  const touch = e.touches[0];
+  const { clientX: x, clientY: y } = e.touches[0];
   if (!touchDrag.active) {
-    if (Math.hypot(touch.clientX - touchDrag.x, touch.clientY - touchDrag.y) > 10) endTouchDrag();
+    if (Math.hypot(x - touchDrag.x, y - touchDrag.y) > 10) endTouchDrag();
     return;
   }
   e.preventDefault();
-  const column = columnAt(touch);
-  if (column) markDrop(column, touch.clientY);
-  else clearDropMarks();
+  Object.assign(touchDrag, { x, y });
+  markTouchDrop();
 }, { passive: false });
 
 board.addEventListener('touchend', e => {
   if (!touchDrag) return;
   if (touchDrag.active) {
     e.preventDefault();
-    const touch = e.changedTouches[0];
-    const column = columnAt(touch);
-    if (column) dropAt(touchDrag.card.dataset.id, column, touch.clientY);
+    const { clientX: x, clientY: y } = e.changedTouches[0];
+    const column = columnAt({ x, y });
+    if (column) dropAt(touchDrag.card.dataset.id, column, y);
   }
   endTouchDrag();
 });
