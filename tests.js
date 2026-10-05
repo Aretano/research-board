@@ -261,9 +261,11 @@
     const x = box.left + box.width / 2;
     const y = midY('b', 5);
     if (y > innerHeight) throw new Skip('Fenster zu niedrig für diesen Test');
+    const scrolled = scrollY;
     touch('touchstart', source, x, midY('a'));
     equal(document.querySelectorAll('.ghost').length, 0, 'Kopien vor dem langen Drücken');
-    await wait(LONG_PRESS_MS + 50);
+    await wait(LONG_PRESS_MS + 150);
+    equal(scrollY, scrolled, 'Greifen am Bildschirmrand scrollt noch nicht');
     assert(source.classList.contains('dragging'), 'Langes Drücken startet das Ziehen');
     equal(document.querySelectorAll('.ghost').length, 1, 'Mitwandernde Kopie');
     assert(touch('touchmove', source, x, y), 'Seite darf beim Ziehen nicht scrollen');
@@ -443,10 +445,68 @@
     equal(JSON.stringify(load()), JSON.stringify(companies), 'Geladener Stand');
   });
 
+  await test('Beschädigte Einträge werden beim Laden übersprungen', () => {
+    const raw = JSON.stringify([mk('a', 'offen', 2), { foo: 1 }, null, { id: 'm', name: 'Messy', status: 'quatsch', rating: 99 }, mk('a', 'fertig', 1)]);
+    localStorage.setItem(STORAGE_KEY, raw);
+    localStorage.removeItem(BACKUP_KEY);
+    loadNotice = '';
+    const loaded = load();
+    equal(loaded.map(c => c.id).join(''), 'am', 'Geladene Einträge');
+    equal(JSON.stringify(loaded[1]), JSON.stringify({ id: 'm', name: 'Messy', sector: '', status: 'offen', rating: 5, notes: '', url: '' }), 'Bereinigter Eintrag');
+    equal(loaded[0].status, 'fertig', 'Bei doppelter ID gilt der spätere Eintrag');
+    equal(localStorage.getItem(BACKUP_KEY), raw, 'Kopie des alten Stands');
+    assert(loadNotice.startsWith('3 beschädigte Einträge wurden übersprungen.'), `Hinweis „${loadNotice}“`);
+  });
+
+  await test('Unlesbare Daten leeren das Board und werden gesichert', () => {
+    for (const raw of ['{ kaputt', '{"name":"x"}', 'null']) {
+      localStorage.setItem(STORAGE_KEY, raw);
+      localStorage.removeItem(BACKUP_KEY);
+      loadNotice = '';
+      equal(load().length, 0, `Einträge bei „${raw}“`);
+      equal(localStorage.getItem(BACKUP_KEY), raw, 'Kopie des alten Stands');
+      assert(loadNotice.startsWith('Die gespeicherten Daten waren unlesbar.'), `Hinweis „${loadNotice}“`);
+    }
+  });
+
+  await test('Intakte und ältere Daten laden ohne Hinweis', () => {
+    const legacy = { id: 'alt', name: 'Altbestand', sector: '', status: 'arbeit', rating: 3, notes: 'ohne Link-Feld' };
+    for (const raw of [JSON.stringify(seed()), JSON.stringify([legacy]), '[]']) {
+      localStorage.setItem(STORAGE_KEY, raw);
+      localStorage.removeItem(BACKUP_KEY);
+      loadNotice = '';
+      load();
+      equal(loadNotice, '', 'Hinweis');
+      equal(localStorage.getItem(BACKUP_KEY), null, 'Kopie');
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([legacy]));
+    equal(JSON.stringify(load()[0]), JSON.stringify({ ...legacy, url: '' }), 'Älterer Eintrag bekommt ein leeres Link-Feld');
+    localStorage.removeItem(STORAGE_KEY);
+    equal(load().length, 0, 'Leerer Speicher');
+    equal(loadNotice, '', 'Hinweis bei leerem Speicher');
+  });
+
+  await test('Hinweis bleibt stehen, bis er bestätigt wird', () => {
+    offerUndo('Hinweistext');
+    assert(!$('toast').hidden, 'Hinweis ist sichtbar');
+    equal($('undo').textContent, 'OK', 'Knopf');
+    assert(!press('z', document.body, { ctrlKey: true }), 'Strg+Z tut bei einem Hinweis nichts');
+    assert(!$('toast').hidden, 'Hinweis bleibt nach Strg+Z');
+    $('undo').click();
+    assert($('toast').hidden, 'OK schliesst den Hinweis');
+    openCard('a');
+    $('delete').click();
+    equal($('undo').textContent, 'Rückgängig', 'Knopf nach dem Löschen');
+  });
+
   await reset().catch(() => {});
   companies = [];
+  loadNotice = '';
   render();
-  try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  try {
+    localStorage.removeItem(BACKUP_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {}
   window.confirm = realConfirm;
   window.alert = realAlert;
   save = realSave;
