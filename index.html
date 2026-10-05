@@ -183,14 +183,16 @@ $('form').addEventListener('submit', () => {
   render();
 });
 
-$('dialog').addEventListener('close', () => {
-  const card = [...document.querySelectorAll('.card')].find(node => node.dataset.id === editingId);
-  if (card) card.focus();
-});
+const cardFor = id => [...document.querySelectorAll('.card')].find(node => node.dataset.id === id);
+
+$('dialog').addEventListener('close', () => (cardFor(editingId) || $('add')).focus());
 
 $('delete').addEventListener('click', () => {
   if (!confirm('Dieses Unternehmen wirklich löschen?')) return;
+  const card = cardFor(editingId);
+  const neighbor = card && (card.nextElementSibling || card.previousElementSibling);
   companies = companies.filter(c => c.id !== editingId);
+  editingId = neighbor ? neighbor.dataset.id : null;
   save();
   render();
   $('dialog').close();
