@@ -14,7 +14,7 @@
   const equal = (actual, expected, what) =>
     assert(actual === expected, `${what}: erwartet „${expected}“, erhalten „${actual}“`);
 
-  const mk = (id, status, rating) => ({ id, name: 'Firma ' + id.toUpperCase(), sector: 'Branche', status, rating, notes: '' });
+  const mk = (id, status, rating) => ({ id, name: 'Firma ' + id.toUpperCase(), sector: 'Branche', status, rating, notes: '', url: '' });
   const seed = () => [mk('a', 'offen', 2), mk('b', 'offen', 5), mk('c', 'offen', 2), mk('x', 'fertig', 1), mk('y', 'fertig', 4)];
   const columnOf = status => document.querySelector(`.column[data-status="${status}"]`);
   const col = status => [...columnOf(status).querySelectorAll('.card')].map(card => card.dataset.id).join('');
@@ -142,6 +142,63 @@
     equal(companies[0].name, 'Firma A', 'Name');
     equal(saves, 0, 'Speichervorgänge');
     equal(focused(), 'a', 'Fokus bleibt auf der Karte');
+  });
+
+  await test('Link erfassen und auf der Karte anzeigen', async () => {
+    openCard('a');
+    equal($('fUrl').value, '', 'Feld ist anfangs leer');
+    $('fUrl').value = ' www.example.com/bericht ';
+    $('fUrl').dispatchEvent(new Event('input'));
+    await untilClosed(() => $('form').requestSubmit());
+    equal(companies[0].url, 'https://www.example.com/bericht', 'Gespeicherte Adresse');
+    const link = cardFor('a').querySelector('a.link');
+    equal(link.textContent, 'example.com ↗', 'Text auf der Karte');
+    equal(link.href, 'https://www.example.com/bericht', 'Ziel');
+    equal(link.target, '_blank', 'Öffnet in neuem Tab');
+    equal(link.rel, 'noopener noreferrer', 'rel');
+    assert(!cardFor('b').querySelector('a.link'), 'Karte ohne Link zeigt keinen');
+    openCard('a');
+    equal($('fUrl').value, 'https://www.example.com/bericht', 'Dialog zeigt die Adresse');
+    $('fUrl').value = '';
+    await untilClosed(() => $('form').requestSubmit());
+    assert(!cardFor('a').querySelector('a.link'), 'Geleertes Feld entfernt den Link');
+  });
+
+  await test('Link öffnet nicht den Bearbeiten-Dialog', () => {
+    companies[0].url = 'https://example.com/';
+    render();
+    const link = cardFor('a').querySelector('a.link');
+    link.addEventListener('click', event => event.preventDefault());
+    link.click();
+    assert(!$('dialog').open, 'Klick auf den Link');
+    link.focus();
+    assert(!press('Enter', link), 'Enter auf dem Link gehört dem Link');
+    assert(!$('dialog').open, 'Enter auf dem Link');
+    press('ArrowRight', link);
+    equal(col('offen'), 'abc', 'Pfeiltaste auf dem Link verschiebt nicht');
+  });
+
+  await test('Ungültiger Link wird nicht gespeichert', () => {
+    openCard('a');
+    $('fUrl').value = 'kein link';
+    $('fUrl').dispatchEvent(new Event('input'));
+    assert(!$('fUrl').validity.valid, 'Feld ist als ungültig markiert');
+    $('form').requestSubmit();
+    assert($('dialog').open, 'Dialog bleibt offen');
+    equal(saves, 0, 'Speichervorgänge');
+  });
+
+  await test('Import übernimmt nur Web-Adressen als Link', async () => {
+    companies = [];
+    render();
+    await importFile(JSON.stringify([
+      { id: 'ok', name: 'Ok', url: 'http://example.org/a' },
+      { id: 'js', name: 'Skript', url: 'javascript:alert(1)' },
+      { id: 'num', name: 'Zahl', url: 42 },
+      { id: 'none', name: 'Ohne' },
+    ]));
+    equal(companies.map(c => c.url).join('|'), 'http://example.org/a|||', 'Übernommene Adressen');
+    equal(document.querySelectorAll('a.link').length, 1, 'Links auf dem Board');
   });
 
   await test('Karte per Tastatur in die Nachbarspalte verschieben', () => {
@@ -293,6 +350,10 @@
     equal(col('offen'), 'b', 'Treffer in den Notizen');
     equal(columnOf('fertig').querySelector('.empty').textContent, 'Keine Treffer', 'Hinweis ohne Treffer');
     equal(columnOf('offen').querySelector('.count').textContent, '1', 'Zähler');
+    companies[3].url = 'https://beispiel.ch/';
+    $('search').value = 'beispiel.ch';
+    $('search').dispatchEvent(new Event('input'));
+    equal(col('fertig'), 'x', 'Treffer im Link');
     $('search').value = '';
     $('search').dispatchEvent(new Event('input'));
     equal(col('offen'), 'abc', 'Ohne Suchbegriff');
@@ -340,7 +401,7 @@
     ]));
     equal(companies.length, 3, 'Übernommene Einträge');
     assert(confirms[0].includes('4 ungültige oder doppelte übersprungen'), `Rückfrage „${confirms[0]}“`);
-    equal(JSON.stringify(companies.find(c => c.id === 'm')), JSON.stringify({ id: 'm', name: 'Messy', sector: '', status: 'offen', rating: 5, notes: '' }), 'Bereinigter Eintrag');
+    equal(JSON.stringify(companies.find(c => c.id === 'm')), JSON.stringify({ id: 'm', name: 'Messy', sector: '', status: 'offen', rating: 5, notes: '', url: '' }), 'Bereinigter Eintrag');
     equal(companies.find(c => c.id === 'neg').rating, 0, 'Negative Bewertung');
     assert(companies[0].id.length > 4, 'Fehlende ID wird erzeugt');
     equal(companies[0].name, 'Nur Name', 'Name ohne Leerzeichen am Rand');
