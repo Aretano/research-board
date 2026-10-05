@@ -27,6 +27,8 @@ Ein kleines Kanban-Board, um Unternehmen während der Recherche zu verfolgen. Di
 
 `tests.html` im Browser öffnen. Die Seite lädt das Board im Testmodus (`index.html?test`), spielt die wichtigsten Abläufe durch und zeigt nach wenigen Sekunden oben rechts, welche Tests bestanden haben. Der Tab muss dabei sichtbar bleiben; im Hintergrund warten die Tests. Im Testmodus verwendet das Board einen eigenen Speicherschlüssel (`research-board-test`); die echten Einträge bleiben unberührt. Die Tests selbst stehen in `tests.js`.
 
+Auf GitHub laufen dieselben Tests automatisch bei jedem Pull Request und bei jedem Push auf `main` (Workflow `.github/workflows/tests.yml`). Das Ergebnis erscheint als Haken oder Kreuz am Pull Request.
+
 ## Daten
 
 Die Einträge werden im `localStorage` des Browsers unter dem Schlüssel `research-board-v1` gespeichert. Sie bleiben also auf diesem Gerät und in diesem Browser; wer die Browserdaten löscht, löscht auch das Board. Beim Öffnen prüft das Board die gespeicherten Daten. Beschädigte Einträge überspringt es und meldet das am unteren Rand; der alte Stand bleibt dann als Kopie unter `research-board-v1-backup` im `localStorage` erhalten.
