@@ -32,7 +32,8 @@
   .column { background: var(--col); border-radius: 12px; padding: 12px; min-height: 240px; border: 2px dashed transparent; }
   .column.over { border-color: var(--accent); }
   .column h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; display: flex; justify-content: space-between; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; cursor: grab; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; cursor: grab;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .card:hover { border-color: var(--accent); }
   .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .card.dragging { opacity: .4; }
@@ -103,12 +104,14 @@
 
 <script>
 const STORAGE_KEY = 'research-board-v1';
+const LONG_PRESS_MS = 400;
 const $ = id => document.getElementById(id);
 const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);
 const STATUSES = [...document.querySelectorAll('.column')].map(column => column.dataset.status);
 
 let companies = load();
 let editingId = null;
+let touchDrag = null;
 
 function load() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
@@ -169,6 +172,7 @@ function render() {
         openDialog(c);
       });
       card.addEventListener('dragstart', e => {
+        endTouchDrag();
         e.dataTransfer.setData('text/plain', c.id);
         card.classList.add('dragging');
       });
@@ -219,7 +223,7 @@ function cardBelow(column, y) {
 }
 
 function clearDropMarks() {
-  document.querySelectorAll('.drop-before, .drop-after').forEach(card => card.classList.remove('drop-before', 'drop-after'));
+  document.querySelectorAll('.over, .drop-before, .drop-after').forEach(node => node.classList.remove('over', 'drop-before', 'drop-after'));
 }
 
 function openDialog(company) {
@@ -280,30 +284,75 @@ $('export').addEventListener('click', () => {
   URL.revokeObjectURL(link.href);
 });
 
+function markDrop(column, y) {
+  clearDropMarks();
+  column.classList.add('over');
+  const before = cardBelow(column, y);
+  const last = [...column.querySelectorAll('.card:not(.dragging)')].pop();
+  if (before) before.classList.add('drop-before');
+  else if (last) last.classList.add('drop-after');
+}
+
+function dropAt(id, column, y) {
+  clearDropMarks();
+  const company = companies.find(c => c.id === id);
+  const before = cardBelow(column, y);
+  if (company) place(company, column.dataset.status, before && companies.find(c => c.id === before.dataset.id));
+}
+
 document.querySelectorAll('.column').forEach(column => {
-  column.addEventListener('dragover', e => {
-    e.preventDefault();
-    column.classList.add('over');
-    clearDropMarks();
-    const before = cardBelow(column, e.clientY);
-    const last = [...column.querySelectorAll('.card:not(.dragging)')].pop();
-    if (before) before.classList.add('drop-before');
-    else if (last) last.classList.add('drop-after');
-  });
-  column.addEventListener('dragleave', e => {
-    if (column.contains(e.relatedTarget)) return;
-    column.classList.remove('over');
-    clearDropMarks();
-  });
-  column.addEventListener('drop', e => {
-    e.preventDefault();
-    column.classList.remove('over');
-    clearDropMarks();
-    const company = companies.find(c => c.id === e.dataTransfer.getData('text/plain'));
-    const before = cardBelow(column, e.clientY);
-    if (company) place(company, column.dataset.status, before && companies.find(c => c.id === before.dataset.id));
-  });
+  column.addEventListener('dragover', e => { e.preventDefault(); markDrop(column, e.clientY); });
+  column.addEventListener('dragleave', e => { if (!column.contains(e.relatedTarget)) clearDropMarks(); });
+  column.addEventListener('drop', e => { e.preventDefault(); dropAt(e.dataTransfer.getData('text/plain'), column, e.clientY); });
 });
+
+const board = document.querySelector('main');
+const columnAt = touch => document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.column');
+
+function endTouchDrag() {
+  if (!touchDrag) return;
+  clearTimeout(touchDrag.timer);
+  touchDrag.card.classList.remove('dragging');
+  clearDropMarks();
+  touchDrag = null;
+}
+
+board.addEventListener('touchstart', e => {
+  endTouchDrag();
+  const card = e.target.closest('.card');
+  if (!card || e.touches.length !== 1) return;
+  const { clientX: x, clientY: y } = e.touches[0];
+  const drag = touchDrag = { card, x, y, active: false, timer: setTimeout(() => {
+    drag.active = true;
+    card.classList.add('dragging');
+  }, LONG_PRESS_MS) };
+}, { passive: true });
+
+board.addEventListener('touchmove', e => {
+  if (!touchDrag) return;
+  const touch = e.touches[0];
+  if (!touchDrag.active) {
+    if (Math.hypot(touch.clientX - touchDrag.x, touch.clientY - touchDrag.y) > 10) endTouchDrag();
+    return;
+  }
+  e.preventDefault();
+  const column = columnAt(touch);
+  if (column) markDrop(column, touch.clientY);
+  else clearDropMarks();
+}, { passive: false });
+
+board.addEventListener('touchend', e => {
+  if (!touchDrag) return;
+  if (touchDrag.active) {
+    e.preventDefault();
+    const touch = e.changedTouches[0];
+    const column = columnAt(touch);
+    if (column) dropAt(touchDrag.card.dataset.id, column, touch.clientY);
+  }
+  endTouchDrag();
+});
+
+board.addEventListener('touchcancel', endTouchDrag);
 
 render();
 </script>
