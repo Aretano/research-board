@@ -153,6 +153,15 @@ function render() {
           cardFor(c.id).focus();
           return;
         }
+        const sibling = { ArrowUp: 'previousElementSibling', ArrowDown: 'nextElementSibling' }[e.key];
+        if (sibling) {
+          const other = card[sibling];
+          if (!other) return;
+          e.preventDefault();
+          swap(c, companies.find(company => company.id === other.dataset.id));
+          cardFor(c.id).focus();
+          return;
+        }
         if (e.key !== 'Enter' && e.key !== ' ') return;
         e.preventDefault();
         openDialog(c);
@@ -173,6 +182,15 @@ function move(company, status) {
   render();
   const title = document.querySelector(`.column[data-status="${status}"] h2 span`).textContent;
   $('live').textContent = `${company.name} nach „${title}“ verschoben`;
+}
+
+function swap(company, other) {
+  const i = companies.indexOf(company), j = companies.indexOf(other);
+  [companies[i], companies[j]] = [companies[j], companies[i]];
+  save();
+  render();
+  const cards = [...cardFor(company.id).parentNode.children];
+  $('live').textContent = `${company.name} an Position ${cards.indexOf(cardFor(company.id)) + 1} von ${cards.length}`;
 }
 
 function openDialog(company) {
