@@ -36,6 +36,8 @@
   .card:hover { border-color: var(--accent); }
   .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .card.dragging { opacity: .4; }
+  .card.drop-before { box-shadow: 0 -4px 0 var(--accent); }
+  .card.drop-after { box-shadow: 0 4px 0 var(--accent); }
   .card .name { font-weight: 600; overflow-wrap: anywhere; }
   .card .sector { color: var(--muted); font-size: 13px; }
   .card .stars { color: var(--star); letter-spacing: 2px; }
@@ -170,7 +172,7 @@ function render() {
         e.dataTransfer.setData('text/plain', c.id);
         card.classList.add('dragging');
       });
-      card.addEventListener('dragend', () => card.classList.remove('dragging'));
+      card.addEventListener('dragend', () => { card.classList.remove('dragging'); clearDropMarks(); });
       list.append(card);
     });
   });
@@ -184,13 +186,40 @@ function move(company, status) {
   $('live').textContent = `${company.name} nach „${title}“ verschoben`;
 }
 
-function swap(company, other) {
-  const i = companies.indexOf(company), j = companies.indexOf(other);
-  [companies[i], companies[j]] = [companies[j], companies[i]];
+function reorder(company, order) {
+  companies = order;
   save();
   render();
   const cards = [...cardFor(company.id).parentNode.children];
   $('live').textContent = `${company.name} an Position ${cards.indexOf(cardFor(company.id)) + 1} von ${cards.length}`;
+}
+
+function swap(company, other) {
+  const order = [...companies];
+  const i = order.indexOf(company), j = order.indexOf(other);
+  [order[i], order[j]] = [order[j], order[i]];
+  reorder(company, order);
+}
+
+function place(company, status, before) {
+  const inColumn = list => list.filter(c => c.status === status);
+  const order = companies.filter(c => c !== company);
+  order.splice(before ? order.indexOf(before) : order.length, 0, company);
+  if (company.status !== status) {
+    companies = order;
+    move(company, status);
+  } else if (inColumn(order).some((c, i) => c !== inColumn(companies)[i])) reorder(company, order);
+}
+
+function cardBelow(column, y) {
+  return [...column.querySelectorAll('.card:not(.dragging)')].find(card => {
+    const box = card.getBoundingClientRect();
+    return y < box.top + box.height / 2;
+  });
+}
+
+function clearDropMarks() {
+  document.querySelectorAll('.drop-before, .drop-after').forEach(card => card.classList.remove('drop-before', 'drop-after'));
 }
 
 function openDialog(company) {
@@ -252,14 +281,27 @@ $('export').addEventListener('click', () => {
 });
 
 document.querySelectorAll('.column').forEach(column => {
-  column.addEventListener('dragover', e => { e.preventDefault(); column.classList.add('over'); });
-  column.addEventListener('dragleave', e => { if (!column.contains(e.relatedTarget)) column.classList.remove('over'); });
+  column.addEventListener('dragover', e => {
+    e.preventDefault();
+    column.classList.add('over');
+    clearDropMarks();
+    const before = cardBelow(column, e.clientY);
+    const last = [...column.querySelectorAll('.card:not(.dragging)')].pop();
+    if (before) before.classList.add('drop-before');
+    else if (last) last.classList.add('drop-after');
+  });
+  column.addEventListener('dragleave', e => {
+    if (column.contains(e.relatedTarget)) return;
+    column.classList.remove('over');
+    clearDropMarks();
+  });
   column.addEventListener('drop', e => {
     e.preventDefault();
     column.classList.remove('over');
+    clearDropMarks();
     const company = companies.find(c => c.id === e.dataTransfer.getData('text/plain'));
-    if (!company || company.status === column.dataset.status) return;
-    move(company, column.dataset.status);
+    const before = cardBelow(column, e.clientY);
+    if (company) place(company, column.dataset.status, before && companies.find(c => c.id === before.dataset.id));
   });
 });
 
