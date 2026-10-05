@@ -138,7 +138,8 @@
 </dialog>
 
 <script>
-const STORAGE_KEY = 'research-board-v1';
+const TEST_MODE = new URLSearchParams(location.search).has('test');
+const STORAGE_KEY = TEST_MODE ? 'research-board-test' : 'research-board-v1';
 const LONG_PRESS_MS = 400;
 const SCROLL_EDGE = 60;
 const UNDO_MS = 10000;
@@ -542,6 +543,7 @@ board.addEventListener('touchend', e => {
 board.addEventListener('touchcancel', endTouchDrag);
 
 render();
+if (TEST_MODE) document.body.append(Object.assign(el('script'), { src: 'tests.js' }));
 </script>
 </body>
 </html>
