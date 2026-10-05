@@ -29,4 +29,6 @@ Ein kleines Kanban-Board, um Unternehmen während der Recherche zu verfolgen. Di
 
 ## Daten
 
-Die Einträge werden im `localStorage` des Browsers unter dem Schlüssel `research-board-v1` gespeichert. Sie bleiben also auf diesem Gerät und in diesem Browser; wer die Browserdaten löscht, löscht auch das Board. Für eine Sicherung regelmässig **Export (JSON)** verwenden; mit **Import (JSON)** lässt sie sich wieder einlesen, auch in einem anderen Browser oder auf einem anderen Gerät.
+Die Einträge werden im `localStorage` des Browsers unter dem Schlüssel `research-board-v1` gespeichert. Sie bleiben also auf diesem Gerät und in diesem Browser; wer die Browserdaten löscht, löscht auch das Board. Beim Öffnen prüft das Board die gespeicherten Daten. Beschädigte Einträge überspringt es und meldet das am unteren Rand; der alte Stand bleibt dann als Kopie unter `research-board-v1-backup` im `localStorage` erhalten.
+
+Für eine Sicherung regelmässig **Export (JSON)** verwenden; mit **Import (JSON)** lässt sie sich wieder einlesen, auch in einem anderen Browser oder auf einem anderen Gerät.
