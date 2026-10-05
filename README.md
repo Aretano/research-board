@@ -12,6 +12,7 @@ Ein kleines Kanban-Board, um Unternehmen während der Recherche zu verfolgen. Di
 - Unternehmen mit Name, Branche, Bewertung (0–5 Sterne) und Notizen erfassen
 - Karten per Drag & Drop zwischen den Spalten verschieben – oder die fokussierte Karte mit Pfeil links/rechts
 - Karten innerhalb der Spalte umsortieren: per Drag & Drop an die gewünschte Stelle ziehen oder die fokussierte Karte mit Pfeil auf/ab bewegen
+- Auf Touchscreens: Karte gedrückt halten, bis sie blasser wird, dann an die gewünschte Stelle ziehen
 - Karte anklicken, um sie zu bearbeiten oder zu löschen – oder mit Tab ansteuern und mit Enter bzw. Leertaste öffnen
 - Suche über Name, Branche und Notizen
 - Export aller Einträge als JSON-Datei mit Datum im Namen, z. B. `research-board-2026-10-05.json`
