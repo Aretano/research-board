@@ -100,6 +100,7 @@
 const STORAGE_KEY = 'research-board-v1';
 const $ = id => document.getElementById(id);
 const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);
+const STATUSES = [...document.querySelectorAll('.column')].map(column => column.dataset.status);
 
 let companies = load();
 let editingId = null;
@@ -140,6 +141,17 @@ function render() {
       if (c.notes) card.append(el('div', 'notes', c.notes));
       card.addEventListener('click', () => openDialog(c));
       card.addEventListener('keydown', e => {
+        const step = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+        if (step) {
+          const status = STATUSES[STATUSES.indexOf(c.status) + step];
+          if (!status) return;
+          e.preventDefault();
+          c.status = status;
+          save();
+          render();
+          cardFor(c.id).focus();
+          return;
+        }
         if (e.key !== 'Enter' && e.key !== ' ') return;
         e.preventDefault();
         openDialog(c);
