@@ -37,6 +37,8 @@
   .card:hover { border-color: var(--accent); }
   .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .card.dragging { opacity: .4; }
+  .card.ghost { position: fixed; left: 0; top: 0; z-index: 10; margin: 0; pointer-events: none; opacity: .92;
+    border-color: var(--accent); box-shadow: 0 10px 28px rgba(0, 0, 0, .3); }
   .card.drop-before { box-shadow: 0 -4px 0 var(--accent); }
   .card.drop-after { box-shadow: 0 4px 0 var(--accent); }
   .card .name { font-weight: 600; overflow-wrap: anywhere; }
@@ -314,6 +316,7 @@ function endTouchDrag() {
   if (!touchDrag) return;
   clearTimeout(touchDrag.timer);
   touchDrag.card.classList.remove('dragging');
+  if (touchDrag.ghost) touchDrag.ghost.remove();
   clearDropMarks();
   touchDrag = null;
 }
@@ -325,10 +328,29 @@ board.addEventListener('touchstart', e => {
   const { clientX: x, clientY: y } = e.touches[0];
   const drag = touchDrag = { card, x, y, active: false, timer: setTimeout(() => {
     drag.active = true;
+    showGhost(drag);
     card.classList.add('dragging');
     requestAnimationFrame(() => autoScroll(drag));
   }, LONG_PRESS_MS) };
 }, { passive: true });
+
+function showGhost(drag) {
+  const box = drag.card.getBoundingClientRect();
+  drag.ghost = drag.card.cloneNode(true);
+  drag.ghost.className = 'card ghost';
+  drag.ghost.removeAttribute('data-id');
+  drag.ghost.removeAttribute('tabindex');
+  drag.ghost.setAttribute('aria-hidden', 'true');
+  drag.ghost.style.width = box.width + 'px';
+  drag.grabX = drag.x - box.left;
+  drag.grabY = drag.y - box.top;
+  moveGhost(drag);
+  document.body.append(drag.ghost);
+}
+
+function moveGhost(drag) {
+  drag.ghost.style.transform = `translate(${drag.x - drag.grabX}px, ${drag.y - drag.grabY}px)`;
+}
 
 function markTouchDrop() {
   const column = columnAt(touchDrag);
@@ -355,6 +377,7 @@ board.addEventListener('touchmove', e => {
   }
   e.preventDefault();
   Object.assign(touchDrag, { x, y });
+  moveGhost(touchDrag);
   markTouchDrop();
 }, { passive: false });
 
