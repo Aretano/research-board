@@ -47,6 +47,11 @@
   .card .notes { margin-top: 6px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere;
     display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
   .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 0; }
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 20; display: flex; align-items: center; gap: 12px;
+    max-width: calc(100vw - 32px); padding: 10px 10px 10px 16px; background: var(--text); color: var(--bg); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); }
+  .toast[hidden] { display: none; }
+  .toast span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toast button { flex: none; background: transparent; border-color: currentColor; padding: 6px 12px; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 20px; width: min(460px, calc(100vw - 32px)); }
   dialog::backdrop { background: rgba(0, 0, 0, .45); }
@@ -80,6 +85,11 @@
 
 <div id="live" class="sr-only" role="status"></div>
 
+<div id="toast" class="toast" role="status" hidden>
+  <span id="toastText"></span>
+  <button id="undo">Rückgängig</button>
+</div>
+
 <dialog id="dialog">
   <form method="dialog" id="form">
     <h3 id="dialogTitle">Unternehmen</h3>
@@ -110,6 +120,7 @@
 const STORAGE_KEY = 'research-board-v1';
 const LONG_PRESS_MS = 400;
 const SCROLL_EDGE = 60;
+const UNDO_MS = 10000;
 const $ = id => document.getElementById(id);
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const stars = n =>'★'.repeat(n) + '☆'.repeat(5 - n);
@@ -118,6 +129,7 @@ const STATUSES = [...document.querySelectorAll('.column')].map(column => column.
 let companies = load();
 let editingId = null;
 let touchDrag = null;
+let undo = null;
 
 function load() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
@@ -269,11 +281,46 @@ $('delete').addEventListener('click', () => {
   if (!confirm('Dieses Unternehmen wirklich löschen?')) return;
   const card = cardFor(editingId);
   const neighbor = card && (card.nextElementSibling || card.previousElementSibling);
-  companies = companies.filter(c => c.id !== editingId);
+  const index = companies.findIndex(c => c.id === editingId);
+  const [company] = companies.splice(index, 1);
   editingId = neighbor ? neighbor.dataset.id : null;
   save();
   render();
   $('dialog').close();
+  offerUndo(company, index);
+});
+
+function offerUndo(company, index) {
+  hideUndo();
+  undo = { company, index, timer: setTimeout(hideUndo, UNDO_MS) };
+  $('toastText').textContent = `„${company.name}“ gelöscht`;
+  $('toast').hidden = false;
+}
+
+function hideUndo() {
+  if (undo) clearTimeout(undo.timer);
+  undo = null;
+  $('toast').hidden = true;
+}
+
+function restore() {
+  if (!undo) return;
+  const { company, index } = undo;
+  hideUndo();
+  if (companies.some(c => c.id === company.id)) return;
+  companies.splice(Math.min(index, companies.length), 0, company);
+  save();
+  render();
+  $('live').textContent = `${company.name} wiederhergestellt`;
+  (cardFor(company.id) || $('add')).focus();
+}
+
+$('undo').addEventListener('click', restore);
+document.addEventListener('keydown', e => {
+  if (!undo || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+  if ($('dialog').open || e.target.matches('input, textarea')) return;
+  e.preventDefault();
+  restore();
 });
 
 $('cancel').addEventListener('click', () => $('dialog').close());
