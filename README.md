@@ -14,7 +14,8 @@ Ein kleines Kanban-Board, um Unternehmen während der Recherche zu verfolgen. Di
 - Karten innerhalb der Spalte umsortieren: per Drag & Drop an die gewünschte Stelle ziehen oder die fokussierte Karte mit Pfeil auf/ab bewegen
 - Auf Touchscreens: Karte gedrückt halten, bis sie blasser wird, dann an die gewünschte Stelle ziehen
 - Karte anklicken, um sie zu bearbeiten oder zu löschen – oder mit Tab ansteuern und mit Enter bzw. Leertaste öffnen
-- Löschen rückgängig machen: 10 Sekunden lang über «Rückgängig» in der Meldung am unteren Rand oder mit Strg+Z
+- Spalte nach Bewertung sortieren: Knopf «★ ↓» im Spaltenkopf, beste Bewertung zuoberst
+- Löschen und Sortieren rückgängig machen: 10 Sekunden lang über «Rückgängig» in der Meldung am unteren Rand oder mit Strg+Z
 - Suche über Name, Branche und Notizen
 - Export aller Einträge als JSON-Datei mit Datum im Namen, z. B. `research-board-2026-10-05.json`
 - Import einer solchen JSON-Datei: neue Unternehmen kommen dazu, bereits vorhandene werden nach Rückfrage mit dem Stand aus der Datei überschrieben, alles andere bleibt

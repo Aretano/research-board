@@ -31,7 +31,9 @@
   @media (max-width: 760px) { main { grid-template-columns: 1fr; } header input[type=search] { width: 100%; } }
   .column { background: var(--col); border-radius: 12px; padding: 12px; min-height: 240px; border: 2px dashed transparent; }
   .column.over { border-color: var(--accent); }
-  .column h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; display: flex; justify-content: space-between; }
+  .column h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  .column h2 span:first-child { margin-right: auto; }
+  .sort { padding: 2px 8px; font-size: 12px; font-weight: 400; letter-spacing: 0; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; cursor: grab;
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .card:hover { border-color: var(--accent); }
@@ -78,9 +80,9 @@
 </header>
 
 <main>
-  <section class="column" data-status="offen"><h2><span>Offen</span><span class="count"></span></h2><div class="cards"></div></section>
-  <section class="column" data-status="arbeit"><h2><span>In Arbeit</span><span class="count"></span></h2><div class="cards"></div></section>
-  <section class="column" data-status="fertig"><h2><span>Fertig</span><span class="count"></span></h2><div class="cards"></div></section>
+  <section class="column" data-status="offen"><h2><span>Offen</span><button class="sort" title="Nach Bewertung sortieren" aria-label="Offen nach Bewertung sortieren">★ ↓</button><span class="count"></span></h2><div class="cards"></div></section>
+  <section class="column" data-status="arbeit"><h2><span>In Arbeit</span><button class="sort" title="Nach Bewertung sortieren" aria-label="In Arbeit nach Bewertung sortieren">★ ↓</button><span class="count"></span></h2><div class="cards"></div></section>
+  <section class="column" data-status="fertig"><h2><span>Fertig</span><button class="sort" title="Nach Bewertung sortieren" aria-label="Fertig nach Bewertung sortieren">★ ↓</button><span class="count"></span></h2><div class="cards"></div></section>
 </main>
 
 <div id="live" class="sr-only" role="status"></div>
@@ -200,12 +202,13 @@ function render() {
   });
 }
 
+const columnTitle = status => document.querySelector(`.column[data-status="${status}"] h2 span`).textContent;
+
 function move(company, status) {
   company.status = status;
   save();
   render();
-  const title = document.querySelector(`.column[data-status="${status}"] h2 span`).textContent;
-  $('live').textContent = `${company.name} nach „${title}“ verschoben`;
+  $('live').textContent = `${company.name} nach „${columnTitle(status)}“ verschoben`;
 }
 
 function reorder(company, order) {
@@ -287,13 +290,48 @@ $('delete').addEventListener('click', () => {
   save();
   render();
   $('dialog').close();
-  offerUndo(company, index);
+  offerUndo(`„${company.name}“ gelöscht`, () => {
+    if (companies.some(c => c.id === company.id)) return;
+    companies.splice(Math.min(index, companies.length), 0, company);
+    save();
+    render();
+    $('live').textContent = `${company.name} wiederhergestellt`;
+    (cardFor(company.id) || $('add')).focus();
+  });
 });
 
-function offerUndo(company, index) {
+function setColumnOrder(status, order) {
+  let i = 0;
+  companies = companies.map(c => c.status === status ? order[i++] : c);
+  save();
+  render();
+}
+
+function sortByRating(status) {
+  const title = columnTitle(status);
+  const previous = companies.filter(c => c.status === status);
+  const sorted = [...previous].sort((a, b) => b.rating - a.rating);
+  if (sorted.every((c, i) => c === previous[i])) {
+    $('live').textContent = `„${title}“ ist bereits nach Bewertung sortiert`;
+    return;
+  }
+  setColumnOrder(status, sorted);
+  $('live').textContent = `„${title}“ nach Bewertung sortiert`;
+  offerUndo(`„${title}“ sortiert`, () => {
+    const current = companies.filter(c => c.status === status);
+    setColumnOrder(status, current.sort((a, b) => previous.indexOf(a) - previous.indexOf(b)));
+    $('live').textContent = `Vorherige Reihenfolge in „${title}“ wiederhergestellt`;
+  });
+}
+
+document.querySelectorAll('.sort').forEach(button => {
+  button.addEventListener('click', () => sortByRating(button.closest('.column').dataset.status));
+});
+
+function offerUndo(text, revert) {
   hideUndo();
-  undo = { company, index, timer: setTimeout(hideUndo, UNDO_MS) };
-  $('toastText').textContent = `„${company.name}“ gelöscht`;
+  undo = { revert, timer: setTimeout(hideUndo, UNDO_MS) };
+  $('toastText').textContent = text;
   $('toast').hidden = false;
 }
 
@@ -305,14 +343,9 @@ function hideUndo() {
 
 function restore() {
   if (!undo) return;
-  const { company, index } = undo;
+  const { revert } = undo;
   hideUndo();
-  if (companies.some(c => c.id === company.id)) return;
-  companies.splice(Math.min(index, companies.length), 0, company);
-  save();
-  render();
-  $('live').textContent = `${company.name} wiederhergestellt`;
-  (cardFor(company.id) || $('add')).focus();
+  revert();
 }
 
 $('undo').addEventListener('click', restore);
