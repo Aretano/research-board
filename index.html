@@ -131,6 +131,7 @@ function render() {
     items.forEach(c => {
       const card = el('div', 'card');
       card.draggable = true;
+      card.dataset.id = c.id;
       card.tabIndex = 0;
       card.setAttribute('role', 'button');
       card.append(el('div', 'name', c.name));
@@ -174,11 +175,17 @@ $('form').addEventListener('submit', () => {
     rating: +$('fRating').value,
     notes: $('fNotes').value.trim(),
   };
-  const existing = companies.find(c => c.id === editingId);
-  if (existing) Object.assign(existing, data);
-  else companies.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ...data });
+  let company = companies.find(c => c.id === editingId);
+  if (company) Object.assign(company, data);
+  else companies.push(company = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ...data });
+  editingId = company.id;
   save();
   render();
+});
+
+$('dialog').addEventListener('close', () => {
+  const card = [...document.querySelectorAll('.card')].find(node => node.dataset.id === editingId);
+  if (card) card.focus();
 });
 
 $('delete').addEventListener('click', () => {
