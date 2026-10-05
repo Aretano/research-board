@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Firmen-Research-Board</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --col: #e9ebef; --text: #1c2230; --muted: #667085;
+    --line: #d5d9e0; --accent: #2f6fed; --accent-text: #ffffff; --star: #e0a100; --danger: #c93434;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d; --panel: #222733; --col: #1a1e27; --text: #e8ebf1; --muted: #98a2b3;
+      --line: #343b4a; --accent: #5b8dff; --accent-text: #0d1017; --star: #f2c14e; --danger: #ff7b7b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 16px; }
+  h1 { font-size: 20px; margin: 0; margin-right: auto; }
+  input, textarea, select, button { font: inherit; color: inherit; }
+  input[type=text], input[type=search], textarea, select {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%;
+  }
+  header input[type=search] { width: 220px; }
+  button { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button.danger { color: var(--danger); margin-right: auto; }
+  main { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 0 16px 24px; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; } header input[type=search] { width: 100%; } }
+  .column { background: var(--col); border-radius: 12px; padding: 12px; min-height: 240px; border: 2px dashed transparent; }
+  .column.over { border-color: var(--accent); }
+  .column h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; display: flex; justify-content: space-between; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; cursor: grab; }
+  .card:hover { border-color: var(--accent); }
+  .card.dragging { opacity: .4; }
+  .card .name { font-weight: 600; overflow-wrap: anywhere; }
+  .card .sector { color: var(--muted); font-size: 13px; }
+  .card .stars { color: var(--star); letter-spacing: 2px; }
+  .card .notes { margin-top: 6px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 0; }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 20px; width: min(460px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(0, 0, 0, .45); }
+  dialog h3 { margin: 0 0 12px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  label > * { margin-top: 4px; }
+  textarea { min-height: 110px; resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .rating { display: flex; align-items: center; gap: 10px; }
+  .rating input { flex: 1; }
+  .rating output { color: var(--star); letter-spacing: 2px; min-width: 90px; }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Firmen-Research-Board</h1>
+  <input type="search" id="search" placeholder="Suchen …" aria-label="Suchen">
+  <button id="export">Export (JSON)</button>
+  <button id="add" class="primary">+ Unternehmen</button>
+</header>
+
+<main>
+  <section class="column" data-status="offen"><h2><span>Offen</span><span class="count"></span></h2><div class="cards"></div></section>
+  <section class="column" data-status="arbeit"><h2><span>In Arbeit</span><span class="count"></span></h2><div class="cards"></div></section>
+  <section class="column" data-status="fertig"><h2><span>Fertig</span><span class="count"></span></h2><div class="cards"></div></section>
+</main>
+
+<dialog id="dialog">
+  <form method="dialog" id="form">
+    <h3 id="dialogTitle">Unternehmen</h3>
+    <label>Name<input type="text" id="fName" required></label>
+    <div class="row">
+      <label>Branche<input type="text" id="fSector"></label>
+      <label>Status
+        <select id="fStatus">
+          <option value="offen">Offen</option>
+          <option value="arbeit">In Arbeit</option>
+          <option value="fertig">Fertig</option>
+        </select>
+      </label>
+    </div>
+    <label>Bewertung
+      <span class="rating"><input type="range" id="fRating" min="0" max="5" step="1"><output id="fStars"></output></span>
+    </label>
+    <label>Notizen<textarea id="fNotes" placeholder="Geschäftsmodell, Kennzahlen, offene Fragen …"></textarea></label>
+    <div class="actions">
+      <button type="button" id="delete" class="danger">Löschen</button>
+      <button type="button" id="cancel">Abbrechen</button>
+      <button type="submit" class="primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const STORAGE_KEY = 'research-board-v1';
+const $ = id => document.getElementById(id);
+const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);
+
+let companies = load();
+let editingId = null;
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch { return []; }
+}
+function save() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(companies)); } catch {}
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text) node.textContent = text;
+  return node;
+}
+
+function render() {
+  const query = $('search').value.trim().toLowerCase();
+  document.querySelectorAll('.column').forEach(column => {
+    const list = column.querySelector('.cards');
+    const items = companies.filter(c => c.status === column.dataset.status &&
+      (c.name + ' ' + c.sector + ' ' + c.notes).toLowerCase().includes(query));
+    list.replaceChildren();
+    column.querySelector('.count').textContent = items.length;
+    if (!items.length) list.append(el('div', 'empty', query ? 'Keine Treffer' : 'Karte hierher ziehen'));
+    items.forEach(c => {
+      const card = el('div', 'card');
+      card.draggable = true;
+      card.append(el('div', 'name', c.name));
+      if (c.sector) card.append(el('div', 'sector', c.sector));
+      if (c.rating) card.append(el('div', 'stars', stars(c.rating)));
+      if (c.notes) card.append(el('div', 'notes', c.notes));
+      card.addEventListener('click', () => openDialog(c));
+      card.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', c.id);
+        card.classList.add('dragging');
+      });
+      card.addEventListener('dragend', () => card.classList.remove('dragging'));
+      list.append(card);
+    });
+  });
+}
+
+function openDialog(company) {
+  editingId = company ? company.id : null;
+  $('dialogTitle').textContent = company ? 'Unternehmen bearbeiten' : 'Neues Unternehmen';
+  $('fName').value = company ? company.name : '';
+  $('fSector').value = company ? company.sector : '';
+  $('fStatus').value = company ? company.status : 'offen';
+  $('fRating').value = company ? company.rating : 0;
+  $('fNotes').value = company ? company.notes : '';
+  $('fStars').textContent = stars(+$('fRating').value);
+  $('delete').hidden = !company;
+  $('dialog').showModal();
+}
+
+$('form').addEventListener('submit', () => {
+  const data = {
+    name: $('fName').value.trim(),
+    sector: $('fSector').value.trim(),
+    status: $('fStatus').value,
+    rating: +$('fRating').value,
+    notes: $('fNotes').value.trim(),
+  };
+  const existing = companies.find(c => c.id === editingId);
+  if (existing) Object.assign(existing, data);
+  else companies.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ...data });
+  save();
+  render();
+});
+
+$('delete').addEventListener('click', () => {
+  if (!confirm('Dieses Unternehmen wirklich löschen?')) return;
+  companies = companies.filter(c => c.id !== editingId);
+  save();
+  render();
+  $('dialog').close();
+});
+
+$('cancel').addEventListener('click', () => $('dialog').close());
+$('add').addEventListener('click', () => openDialog(null));
+$('search').addEventListener('input', render);
+$('fRating').addEventListener('input', () => $('fStars').textContent = stars(+$('fRating').value));
+
+$('export').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(companies, null, 2)], { type: 'application/json' });
+  const link = el('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'research-board.json';
+  link.click();
+  URL.revokeObjectURL(link.href);
+});
+
+document.querySelectorAll('.column').forEach(column => {
+  column.addEventListener('dragover', e => { e.preventDefault(); column.classList.add('over'); });
+  column.addEventListener('dragleave', e => { if (!column.contains(e.relatedTarget)) column.classList.remove('over'); });
+  column.addEventListener('drop', e => {
+    e.preventDefault();
+    column.classList.remove('over');
+    const company = companies.find(c => c.id === e.dataTransfer.getData('text/plain'));
+    if (!company) return;
+    company.status = column.dataset.status;
+    save();
+    render();
+  });
+});
+
+render();
+</script>
+</body>
+</html>
