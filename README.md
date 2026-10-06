@@ -30,6 +30,16 @@ Die Einträge liegen in beiden Fällen nur im jeweiligen Browser. Die Internet-A
 - Import einer solchen JSON-Datei: neue Unternehmen kommen dazu, bereits vorhandene werden nach Rückfrage mit dem Stand aus der Datei überschrieben, alles andere bleibt
 - Helles und dunkles Design, je nach Systemeinstellung
 
+## KI-Recherche
+
+Der Knopf **Recherchieren** im Dialog eines Unternehmens lässt Claude im Internet nach dem Unternehmen suchen. Das Ergebnis landet auf der Karte: Branche und Link, sofern diese Felder noch leer sind, und ein Abschnitt «Recherche vom … (Claude)» am Ende der Notizen mit Geschäftsmodell, Kennzahlen, Besonderheiten und Risiken, offenen Fragen und Quellen. Eigene Angaben werden nie überschrieben, und die Übernahme lässt sich 10 Sekunden lang rückgängig machen. Die Bewertung in Sternen bleibt unberührt; Claude gibt keine Anlageempfehlung.
+
+Dafür braucht es einen eigenen Anthropic-API-Schlüssel (getrennt von einem Claude-Abo), den man unter **KI-Recherche** einträgt:
+
+- Der Schlüssel wird nur im `localStorage` dieses Browsers gespeichert (`research-board-claude-key`) und nur an `api.anthropic.com` gesendet. Er ist nicht Teil von Export oder Sicherungskopie und liegt nicht in diesem Repository.
+- Wer Zugriff auf dieses Browserprofil hat, kann den Schlüssel auslesen. Auf einem geteilten Gerät den Schlüssel nach Gebrauch wieder löschen und in der Anthropic-Konsole ein Ausgabenlimit setzen.
+- Jede Recherche wird dem Anthropic-Konto verrechnet (Modell `claude-opus-5-5` mit Websuche).
+
 ## Tests
 
 `tests.html` im Browser öffnen. Die Seite lädt das Board im Testmodus (`index.html?test`), spielt die wichtigsten Abläufe durch und zeigt nach wenigen Sekunden oben rechts, welche Tests bestanden haben. Der Tab muss dabei sichtbar bleiben; im Hintergrund warten die Tests. Im Testmodus verwendet das Board einen eigenen Speicherschlüssel (`research-board-test`); die echten Einträge bleiben unberührt. Die Tests selbst stehen in `tests.js`.

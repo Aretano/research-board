@@ -39,8 +39,11 @@
   }
 
   async function reset() {
-    for (const dialog of [$('dialog'), $('help'), $('backup')]) if (dialog.open) await untilClosed(() => dialog.close(), dialog);
+    for (const dialog of [$('dialog'), $('help'), $('backup'), $('ai')]) if (dialog.open) await untilClosed(() => dialog.close(), dialog);
     localStorage.removeItem(BACKUP_KEY);
+    localStorage.removeItem(AI_KEY);
+    researching.clear();
+    pendingResearchId = null;
     updateBackupButton();
     hideUndo();
     endTouchDrag();
@@ -96,6 +99,23 @@
     assert(blob, 'Es wurde nichts heruntergeladen');
     return { name, text: await blob.text() };
   }
+
+  // Ersetzt die Anfragen an Claude durch vorbereitete Antworten; es geht nichts ins Internet und es wird kein echter Schlüssel gebraucht.
+  function stubClaude(...replies) {
+    const realFetch = window.fetch;
+    const calls = [];
+    window.fetch = async (url, init) => {
+      if (!String(url).startsWith('https://api.anthropic.com/')) return realFetch(url, init);
+      calls.push({ url: String(url), headers: init.headers, body: JSON.parse(init.body) });
+      const reply = replies.shift();
+      if (!reply) throw new Error('Unerwartete weitere Anfrage an Claude');
+      if (reply.network) throw new TypeError('Failed to fetch');
+      return new Response(JSON.stringify(reply.body), { status: reply.status || 200, headers: { 'content-type': 'application/json' } });
+    };
+    return { calls, restore: () => { window.fetch = realFetch; } };
+  }
+  const saveCall = input => ({ body: { stop_reason: 'tool_use', content: [{ type: 'text', text: 'Fertig.' }, { type: 'tool_use', id: 'toolu_1', name: 'karte_speichern', input }] } });
+  const found = { branche: 'Nahrungsmittel', link: 'https://www.example.com/investors', notizen: 'Geschäftsmodell\nVerkauft Lebensmittel.\n\nQuellen\nhttps://www.example.com/bericht' };
 
   async function importFile(text) {
     const dataTransfer = new DataTransfer();
@@ -538,6 +558,141 @@
     equal(JSON.stringify(load()), JSON.stringify(companies), 'Geladener Stand');
   });
 
+  await test('Recherche füllt die Karte und lässt sich zurücknehmen', async () => {
+    localStorage.setItem(AI_KEY, 'test-schluessel');
+    companies[0] = { ...companies[0], sector: '', notes: '' };
+    const claude = stubClaude(saveCall(found));
+    try {
+      const running = startResearch('a');
+      assert(cardFor('a').classList.contains('researching'), 'Karte zeigt, dass die Recherche läuft');
+      equal(cardFor('a').querySelector('.busy').textContent, 'Recherche läuft …', 'Hinweis auf der Karte');
+      await running;
+    } finally { claude.restore(); }
+    const company = companies[0];
+    equal(company.sector, 'Nahrungsmittel', 'Branche');
+    equal(company.url, 'https://www.example.com/investors', 'Link');
+    assert(/^Recherche vom \d{4}-\d{2}-\d{2} \(Claude\):\nGeschäftsmodell/.test(company.notes), `Notizen „${company.notes}“`);
+    equal(company.rating, 2, 'Bewertung bleibt unverändert');
+    assert(!cardFor('a').classList.contains('researching'), 'Karte ist nicht mehr als laufend markiert');
+    equal(JSON.stringify(stored()[0]), JSON.stringify(company), 'Ergebnis ist gespeichert');
+    equal($('toastText').textContent, 'Recherche zu „Firma A“ übernommen', 'Meldung');
+    $('undo').click();
+    equal(companies[0].sector + '|' + companies[0].url + '|' + companies[0].notes, '||', 'Nach dem Rückgängigmachen');
+  });
+
+  await test('Recherche sendet die Anfrage in der erwarteten Form', async () => {
+    localStorage.setItem(AI_KEY, 'test-schluessel');
+    companies[0].url = 'https://alt.example/';
+    const claude = stubClaude(saveCall(found));
+    try { await startResearch('a'); } finally { claude.restore(); }
+    const { url, headers, body } = claude.calls[0];
+    equal(url, 'https://api.anthropic.com/v1/messages', 'Adresse');
+    equal(headers['x-api-key'], 'test-schluessel', 'Schlüssel im Kopf der Anfrage');
+    equal(headers['anthropic-version'], '2023-06-01', 'API-Version');
+    equal(headers['anthropic-dangerous-direct-browser-access'], 'true', 'Freigabe für Anfragen aus dem Browser');
+    equal(body.model, 'claude-opus-5-5', 'Modell');
+    equal(body.tools.map(tool => tool.name).join(','), 'web_search,karte_speichern', 'Werkzeuge');
+    equal(body.tools[0].type, 'web_search_20260209', 'Websuche');
+    assert(body.tools[1].strict && body.tools[1].input_schema.additionalProperties === false, 'Ergebnis-Werkzeug mit festem Schema');
+    assert(body.system.includes('keine Empfehlung zum Kaufen'), 'Auftrag schliesst Anlageempfehlungen aus');
+    assert(body.messages[0].content.startsWith('Unternehmen: Firma A\nBereits notierte Branche: Branche\nBereits notierter Link: https://alt.example/'), `Nachricht „${body.messages[0].content}“`);
+    assert(!JSON.stringify(body).includes('test-schluessel'), 'Schlüssel steht nicht im Inhalt der Anfrage');
+  });
+
+  await test('Recherche überschreibt keine eigenen Angaben', async () => {
+    localStorage.setItem(AI_KEY, 'test-schluessel');
+    companies[0] = { ...companies[0], sector: 'Meine Branche', url: 'https://mein.example/', notes: 'Meine Notiz' };
+    const claude = stubClaude(saveCall(found));
+    try { await startResearch('a'); } finally { claude.restore(); }
+    equal(companies[0].sector, 'Meine Branche', 'Branche');
+    equal(companies[0].url, 'https://mein.example/', 'Link');
+    assert(companies[0].notes.startsWith('Meine Notiz\n\nRecherche vom '), `Notizen „${companies[0].notes}“`);
+  });
+
+  await test('Recherche setzt eine pausierte Antwort fort', async () => {
+    localStorage.setItem(AI_KEY, 'test-schluessel');
+    const paused = [{ type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'Firma A' } }];
+    const claude = stubClaude({ body: { stop_reason: 'pause_turn', content: paused } }, saveCall(found));
+    try { await startResearch('a'); } finally { claude.restore(); }
+    equal(claude.calls.length, 2, 'Anfragen');
+    equal(JSON.stringify(claude.calls[1].body.messages[1]), JSON.stringify({ role: 'assistant', content: paused }), 'Zweite Anfrage enthält die pausierte Antwort unverändert');
+    assert(companies[0].notes.includes('Verkauft Lebensmittel.'), 'Ergebnis übernommen');
+  });
+
+  await test('Recherche meldet Fehler, ohne die Karte zu ändern', async () => {
+    localStorage.setItem(AI_KEY, 'test-schluessel');
+    const before = JSON.stringify(companies[0]);
+    const cases = [
+      [{ status: 401, body: { error: { message: 'invalid x-api-key' } } }, 'Der API-Schlüssel wurde abgelehnt.'],
+      [{ status: 400, body: { error: { message: 'Your credit balance is too low' } } }, 'Claude meldet einen Fehler (400): Your credit balance is too low'],
+      [{ status: 529, body: { error: { message: 'Overloaded' } } }, 'Claude ist gerade nicht erreichbar oder überlastet.'],
+      [{ network: true }, 'Keine Verbindung zu Claude.'],
+      [{ body: { stop_reason: 'refusal', content: [] } }, 'Claude hat diese Recherche abgelehnt.'],
+      [{ body: { stop_reason: 'max_tokens', content: [] } }, 'Die Antwort war zu lang'],
+      [{ body: { stop_reason: 'end_turn', content: [] } }, 'Claude hat kein Ergebnis geliefert.'],
+    ];
+    for (const [reply, expected] of cases) {
+      const claude = stubClaude(reply);
+      try { await startResearch('a'); } finally { claude.restore(); }
+      assert($('toastText').textContent.includes(expected), `Meldung „${$('toastText').textContent}“ sollte „${expected}“ enthalten`);
+      equal($('undo').textContent, 'OK', 'Fehlermeldung bleibt stehen, bis sie bestätigt wird');
+      equal(JSON.stringify(companies[0]), before, 'Karte unverändert');
+      equal(researching.size, 0, 'Keine Recherche mehr als laufend markiert');
+    }
+    equal(saves, 0, 'Speichervorgänge');
+  });
+
+  await test('Recherche übernimmt eine Antwort ohne Werkzeugaufruf als Notiz', async () => {
+    localStorage.setItem(AI_KEY, 'test-schluessel');
+    companies[0].notes = '';
+    const claude = stubClaude({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Freier Text statt Werkzeug.' }] } });
+    try { await startResearch('a'); } finally { claude.restore(); }
+    assert(companies[0].notes.endsWith('Freier Text statt Werkzeug.'), `Notizen „${companies[0].notes}“`);
+  });
+
+  await test('Recherche ohne Schlüssel fragt zuerst danach', async () => {
+    const claude = stubClaude(saveCall(found));
+    try {
+      openCard('a');
+      $('fName').value = 'Alpha AG';
+      $('research').click();
+      assert($('ai').open, 'Einstellungen öffnen sich');
+      equal(companies[0].name, 'Alpha AG', 'Änderungen im Dialog sind gespeichert');
+      equal(claude.calls.length, 0, 'Ohne Schlüssel geht keine Anfrage hinaus');
+      equal($('aiState').textContent, 'Es ist noch kein Schlüssel gespeichert.', 'Stand');
+      $('aiKey').value = '  neuer-schluessel-1234  ';
+      await untilClosed(() => $('aiForm').requestSubmit(), $('ai'));
+      await until(() => researching.size === 0 && claude.calls.length === 1, 'Recherche nach dem Speichern des Schlüssels');
+    } finally { claude.restore(); }
+    equal(localStorage.getItem(AI_KEY), 'neuer-schluessel-1234', 'Gespeicherter Schlüssel');
+    equal(claude.calls[0].headers['x-api-key'], 'neuer-schluessel-1234', 'Verwendeter Schlüssel');
+    equal(claude.calls[0].body.messages[0].content.split('\n')[0], 'Unternehmen: Alpha AG', 'Recherchiertes Unternehmen');
+    assert(companies[0].notes.includes('Verkauft Lebensmittel.'), 'Ergebnis übernommen');
+  });
+
+  await test('Schlüssel wird nie angezeigt oder exportiert und lässt sich löschen', async () => {
+    localStorage.setItem(AI_KEY, 'sk-geheim-abcd');
+    $('aiOpen').click();
+    equal($('aiKey').value, '', 'Eingabefeld bleibt leer');
+    equal($('aiKey').type, 'password', 'Eingabefeld verdeckt die Eingabe');
+    equal($('aiState').textContent, 'Ein Schlüssel ist gespeichert (endet auf …abcd).', 'Stand');
+    assert(!document.body.textContent.includes('sk-geheim'), 'Schlüssel steht nirgends auf der Seite');
+    const file = await captureDownload(() => $('export').click());
+    assert(!file.text.includes('sk-geheim'), 'Schlüssel steht nicht im Export');
+    await untilClosed(() => $('aiDelete').click(), $('ai'));
+    equal(localStorage.getItem(AI_KEY), null, 'Schlüssel ist gelöscht');
+    $('aiOpen').click();
+    assert($('aiDelete').hidden, 'Ohne Schlüssel gibt es nichts zu löschen');
+  });
+
+  await test('Recherche läuft pro Karte nur einmal gleichzeitig', async () => {
+    localStorage.setItem(AI_KEY, 'test-schluessel');
+    const claude = stubClaude(saveCall(found));
+    try { await Promise.all([startResearch('a'), startResearch('a')]); } finally { claude.restore(); }
+    equal(claude.calls.length, 1, 'Anfragen');
+    equal(companies[0].notes.split('Recherche vom').length - 1, 1, 'Eingetragene Recherchen');
+  });
+
   await test('Beschädigte Einträge werden beim Laden übersprungen', () => {
     const raw = JSON.stringify([mk('a', 'offen', 2), { foo: 1 }, null, { id: 'm', name: 'Messy', status: 'quatsch', rating: 99 }, mk('a', 'fertig', 1)]);
     localStorage.setItem(STORAGE_KEY, raw);
@@ -598,6 +753,7 @@
   render();
   try {
     localStorage.removeItem(BACKUP_KEY);
+    localStorage.removeItem(AI_KEY);
     localStorage.removeItem(STORAGE_KEY);
   } catch {}
   updateBackupButton();
