@@ -39,7 +39,9 @@
   }
 
   async function reset() {
-    for (const dialog of [$('dialog'), $('help')]) if (dialog.open) await untilClosed(() => dialog.close(), dialog);
+    for (const dialog of [$('dialog'), $('help'), $('backup')]) if (dialog.open) await untilClosed(() => dialog.close(), dialog);
+    localStorage.removeItem(BACKUP_KEY);
+    updateBackupButton();
     hideUndo();
     endTouchDrag();
     $('search').value = '';
@@ -80,6 +82,19 @@
     const event = new TouchEvent(type, { touches: type === 'touchmove' || type === 'touchstart' ? [point] : [], changedTouches: [point], bubbles: true, cancelable: true });
     target.dispatchEvent(event);
     return event.defaultPrevented;
+  }
+
+  async function captureDownload(action) {
+    const realCreate = URL.createObjectURL, realClick = HTMLAnchorElement.prototype.click;
+    let blob, name;
+    URL.createObjectURL = object => { blob = object; return realCreate.call(URL, object); };
+    HTMLAnchorElement.prototype.click = function () { name = this.download; };
+    try { action(); } finally {
+      URL.createObjectURL = realCreate;
+      HTMLAnchorElement.prototype.click = realClick;
+    }
+    assert(blob, 'Es wurde nichts heruntergeladen');
+    return { name, text: await blob.text() };
   }
 
   async function importFile(text) {
@@ -388,16 +403,68 @@
   });
 
   await test('Export enthält alle Daten und das Datum im Namen', async () => {
-    const realCreate = URL.createObjectURL, realClick = HTMLAnchorElement.prototype.click;
-    let blob, name;
-    URL.createObjectURL = object => { blob = object; return realCreate.call(URL, object); };
-    HTMLAnchorElement.prototype.click = function () { name = this.download; };
-    try { $('export').click(); } finally {
-      URL.createObjectURL = realCreate;
-      HTMLAnchorElement.prototype.click = realClick;
-    }
-    assert(/^research-board-\d{4}-\d{2}-\d{2}\.json$/.test(name), `Dateiname „${name}“`);
-    equal(await blob.text(), JSON.stringify(companies, null, 2), 'Inhalt');
+    const file = await captureDownload(() => $('export').click());
+    assert(/^research-board-\d{4}-\d{2}-\d{2}\.json$/.test(file.name), `Dateiname „${file.name}“`);
+    equal(file.text, JSON.stringify(companies, null, 2), 'Inhalt');
+  });
+
+  await test('Sicherungskopie: Knopf nur, wenn es eine Kopie gibt', () => {
+    assert($('backupOpen').hidden, 'Ohne Kopie ist der Knopf verborgen');
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([mk('a', 'offen', 2), { kaputt: true }]));
+    load();
+    updateBackupButton();
+    assert(!$('backupOpen').hidden, 'Nach einem Laden mit beschädigten Einträgen ist er sichtbar');
+  });
+
+  await test('Sicherungskopie herunterladen', async () => {
+    const raw = JSON.stringify([mk('n', 'arbeit', 3), { kaputt: true }, null]);
+    localStorage.setItem(BACKUP_KEY, raw);
+    updateBackupButton();
+    $('backupOpen').click();
+    assert($('backup').open, 'Dialog öffnet sich');
+    equal($('backupInfo').textContent, 'Die Kopie enthält 3 Einträge, davon 1 brauchbar.', 'Angaben zur Kopie');
+    assert(!$('backupImport').hidden, 'Einspielen wird angeboten');
+    const file = await captureDownload(() => $('backupDownload').click());
+    assert(/^research-board-backup-\d{4}-\d{2}-\d{2}\.json$/.test(file.name), `Dateiname „${file.name}“`);
+    equal(file.text, raw, 'Inhalt ist die unveränderte Kopie');
+    equal(localStorage.getItem(BACKUP_KEY), raw, 'Kopie bleibt nach dem Herunterladen erhalten');
+    await untilClosed(() => $('backup').close(), $('backup'));
+
+    localStorage.setItem(BACKUP_KEY, '{ kaputt');
+    $('backupOpen').click();
+    assert($('backupInfo').textContent.startsWith('Die Kopie ist nicht als Liste lesbar.'), 'Angaben zu unlesbarer Kopie');
+    assert($('backupImport').hidden, 'Einspielen wird bei unlesbarer Kopie nicht angeboten');
+    const text = await captureDownload(() => $('backupDownload').click());
+    assert(/\.txt$/.test(text.name), `Dateiname „${text.name}“`);
+    equal(text.text, '{ kaputt', 'Inhalt der unlesbaren Kopie');
+  });
+
+  await test('Sicherungskopie einspielen', () => {
+    localStorage.setItem(BACKUP_KEY, JSON.stringify([mk('n', 'arbeit', 3), { kaputt: true }, { ...mk('a', 'fertig', 5), name: 'Alter Stand' }]));
+    updateBackupButton();
+    $('backupOpen').click();
+    $('backupImport').click();
+    assert(!$('backup').open, 'Dialog schliesst sich');
+    equal(confirms[0], 'Import: 1 neu, 1 bestehende werden überschrieben, 1 ungültige oder doppelte übersprungen. Fortfahren?', 'Rückfrage');
+    equal(col('arbeit'), 'n', 'Neuer Eintrag aus der Kopie');
+    equal(companies[0].name, 'Alter Stand', 'Bestehender Eintrag aus der Kopie');
+    assert(localStorage.getItem(BACKUP_KEY) !== null, 'Kopie bleibt nach dem Einspielen erhalten');
+  });
+
+  await test('Sicherungskopie löschen', () => {
+    localStorage.setItem(BACKUP_KEY, '[]');
+    updateBackupButton();
+    $('backupOpen').click();
+    confirmAnswer = false;
+    $('backupDelete').click();
+    assert(localStorage.getItem(BACKUP_KEY) !== null, 'Abgelehnte Rückfrage löscht nicht');
+    assert($('backup').open, 'Dialog bleibt offen');
+    confirmAnswer = true;
+    $('backupDelete').click();
+    equal(localStorage.getItem(BACKUP_KEY), null, 'Kopie ist gelöscht');
+    assert(!$('backup').open, 'Dialog schliesst sich');
+    assert($('backupOpen').hidden, 'Knopf verschwindet');
+    equal(companies.length, 5, 'Board bleibt unverändert');
   });
 
   await test('Import führt zusammen', async () => {
@@ -533,6 +600,7 @@
     localStorage.removeItem(BACKUP_KEY);
     localStorage.removeItem(STORAGE_KEY);
   } catch {}
+  updateBackupButton();
   window.confirm = realConfirm;
   window.alert = realAlert;
   save = realSave;
