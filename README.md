@@ -32,6 +32,6 @@ Auf GitHub laufen dieselben Tests automatisch bei jedem Pull Request und bei jed
 
 ## Daten
 
-Die Einträge werden im `localStorage` des Browsers unter dem Schlüssel `research-board-v1` gespeichert. Sie bleiben also auf diesem Gerät und in diesem Browser; wer die Browserdaten löscht, löscht auch das Board. Beim Öffnen prüft das Board die gespeicherten Daten. Beschädigte Einträge überspringt es und meldet das am unteren Rand; der alte Stand bleibt dann als Kopie unter `research-board-v1-backup` im `localStorage` erhalten.
+Die Einträge werden im `localStorage` des Browsers unter dem Schlüssel `research-board-v1` gespeichert. Sie bleiben also auf diesem Gerät und in diesem Browser; wer die Browserdaten löscht, löscht auch das Board. Beim Öffnen prüft das Board die gespeicherten Daten. Beschädigte Einträge überspringt es und meldet das am unteren Rand; der alte Stand bleibt dann als Kopie unter `research-board-v1-backup` im `localStorage` erhalten. Solange es eine solche Kopie gibt, zeigt das Board den Knopf **Sicherungskopie**: Damit lässt sie sich herunterladen, ihre brauchbaren Einträge lassen sich wieder einspielen (wie ein Import, mit Rückfrage), oder sie lässt sich löschen.
 
 Für eine Sicherung regelmässig **Export (JSON)** verwenden; mit **Import (JSON)** lässt sie sich wieder einlesen, auch in einem anderen Browser oder auf einem anderen Gerät.
