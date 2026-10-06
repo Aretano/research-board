@@ -24,7 +24,7 @@
   header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 16px; }
   h1 { font-size: 20px; margin: 0; margin-right: auto; }
   input, textarea, select, button { font: inherit; color: inherit; }
-  input[type=text], input[type=search], textarea, select {
+  input[type=text], input[type=search], input[type=password], textarea, select {
     background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%;
   }
   header input[type=search] { width: 220px; }
@@ -44,6 +44,10 @@
   .card:hover { border-color: var(--accent); }
   .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .card.dragging { opacity: .4; }
+  .card.researching { border-style: dashed; border-color: var(--accent); }
+  .card .busy { margin-top: 6px; font-size: 13px; color: var(--accent); }
+  .hint { font-size: 13px; color: var(--muted); }
+  .hint a { color: var(--accent); }
   .card.ghost { position: fixed; left: 0; top: 0; z-index: 10; margin: 0; pointer-events: none; opacity: .92;
     border-color: var(--accent); box-shadow: 0 10px 28px rgba(0, 0, 0, .3); }
   .card.drop-before { box-shadow: 0 -4px 0 var(--accent); }
@@ -92,6 +96,7 @@
     <option value="5">nur ★★★★★</option>
   </select>
   <button id="helpOpen" aria-haspopup="dialog">Tastenkürzel</button>
+  <button id="aiOpen" aria-haspopup="dialog">KI-Recherche</button>
   <button id="backupOpen" aria-haspopup="dialog" hidden>Sicherungskopie</button>
   <button id="import">Import (JSON)</button>
   <input type="file" id="importFile" accept="application/json,.json" hidden>
@@ -104,6 +109,21 @@
   <section class="column" data-status="arbeit"><h2><span>In Arbeit</span><button class="sort" title="Nach Bewertung sortieren" aria-label="In Arbeit nach Bewertung sortieren">★ ↓</button><span class="count"></span></h2><div class="cards"></div></section>
   <section class="column" data-status="fertig"><h2><span>Fertig</span><button class="sort" title="Nach Bewertung sortieren" aria-label="Fertig nach Bewertung sortieren">★ ↓</button><span class="count"></span></h2><div class="cards"></div></section>
 </main>
+
+<dialog id="ai" aria-labelledby="aiTitle">
+  <form method="dialog" id="aiForm">
+    <h3 id="aiTitle">KI-Recherche</h3>
+    <p>Mit «Recherchieren» sucht Claude im Internet nach dem Unternehmen und trägt Branche, Link und Notizen mit Quellen auf der Karte ein. Die Bewertung bleibt bei dir; Claude gibt keine Anlageempfehlung.</p>
+    <label>Anthropic-API-Schlüssel<input type="password" id="aiKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></label>
+    <p id="aiState"></p>
+    <p class="hint">Den Schlüssel erstellst du in der <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Anthropic-Konsole</a>. Er wird nur in diesem Browser gespeichert und nur an api.anthropic.com gesendet; er ist nicht Teil von Export oder Sicherungskopie. Jede Recherche wird deinem Anthropic-Konto verrechnet.</p>
+    <div class="actions">
+      <button type="button" id="aiDelete" class="danger">Schlüssel löschen</button>
+      <button type="button" id="aiClose">Schliessen</button>
+      <button type="submit" class="primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="backup" aria-labelledby="backupTitle">
   <form method="dialog">
@@ -161,6 +181,7 @@
     <label>Notizen<textarea id="fNotes" placeholder="Geschäftsmodell, Kennzahlen, offene Fragen …"></textarea></label>
     <div class="actions">
       <button type="button" id="delete" class="danger">Löschen</button>
+      <button type="button" id="research">Recherchieren</button>
       <button type="button" id="cancel">Abbrechen</button>
       <button type="submit" class="primary">Speichern</button>
     </div>
@@ -171,6 +192,7 @@
 const TEST_MODE = new URLSearchParams(location.search).has('test');
 const STORAGE_KEY = TEST_MODE ? 'research-board-test' : 'research-board-v1';
 const BACKUP_KEY = STORAGE_KEY + '-backup';
+const AI_KEY = TEST_MODE ? 'research-board-test-claude-key' : 'research-board-claude-key';
 const LONG_PRESS_MS = 400;
 const SCROLL_EDGE = 60;
 const UNDO_MS = 10000;
@@ -190,6 +212,9 @@ let companies = load();
 let editingId = null;
 let touchDrag = null;
 let undo = null;
+let researchAfterSave = false;
+let pendingResearchId = null;
+const researching = new Set();
 
 function load() {
   let raw = null, entries;
@@ -232,6 +257,10 @@ function render() {
       card.dataset.id = c.id;
       card.tabIndex = 0;
       card.setAttribute('role', 'button');
+      if (researching.has(c.id)) {
+        card.classList.add('researching');
+        card.setAttribute('aria-busy', 'true');
+      }
       card.append(el('div', 'name', c.name));
       if (c.sector) card.append(el('div', 'sector', c.sector));
       const href = cleanUrl(c.url);
@@ -243,6 +272,7 @@ function render() {
       }
       if (c.rating) card.append(el('div', 'stars', stars(c.rating)));
       if (c.notes) card.append(el('div', 'notes', c.notes));
+      if (researching.has(c.id)) card.append(el('div', 'busy', 'Recherche läuft …'));
       card.addEventListener('click', () => openDialog(c));
       card.addEventListener('keydown', e => {
         if (e.target !== card) return;
@@ -354,7 +384,177 @@ $('form').addEventListener('submit', () => {
   editingId = company.id;
   save();
   render();
+  if (researchAfterSave) startResearch(company.id);
 });
+
+$('research').addEventListener('click', () => {
+  researchAfterSave = true;
+  $('form').requestSubmit();
+  researchAfterSave = false;
+});
+
+const RESEARCH_TOOL = {
+  name: 'karte_speichern',
+  description: 'Speichert das Ergebnis der Recherche auf der Karte des Unternehmens. Genau einmal aufrufen, sobald die Recherche abgeschlossen ist.',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['branche', 'link', 'notizen'],
+    properties: {
+      branche: { type: 'string', description: 'Branche in wenigen Wörtern, z. B. «Nahrungsmittel» oder «Spezialchemie».' },
+      link: { type: 'string', description: 'Vollständige https-Adresse der offiziellen Website oder der Seite für Investoren. Leer lassen, wenn keine gefunden wurde.' },
+      notizen: { type: 'string', description: 'Die Notizen als reiner Text mit Zeilenumbrüchen, ohne Markdown.' },
+    },
+  },
+};
+
+const RESEARCH_SYSTEM = `Du recherchierst Unternehmen für ein persönliches Research-Board. Die Person, die das Board führt, liest deine Notizen später auf einer kleinen Karte und entscheidet selbst, wie sie das Unternehmen einschätzt.
+
+Suche im Internet nach dem genannten Unternehmen und stütze dich auf verlässliche Quellen: die Website des Unternehmens, Geschäftsberichte, Mitteilungen an Investoren, Handelsregister und anerkannte Wirtschaftsmedien. Wenn es mehrere Unternehmen mit diesem Namen gibt, nimm das bekannteste und halte in den Notizen fest, welches du gewählt hast. Findest du das Unternehmen nicht, sag das in den Notizen, statt etwas zu vermuten.
+
+Schreibe die Notizen auf Deutsch als reinen Text mit diesen Abschnitten, jeder mit einer kurzen Überschrift auf einer eigenen Zeile:
+Geschäftsmodell: womit das Unternehmen Geld verdient, wichtigste Sparten und Märkte.
+Kennzahlen: Umsatz, Gewinn oder Marge und Zahl der Mitarbeitenden, jeweils mit Jahr und Währung. Lass eine Kennzahl weg, wenn du sie nicht belegen kannst.
+Besonderheiten und Risiken: was das Unternehmen auszeichnet und was es gefährden könnte.
+Offene Fragen: was sich aus öffentlichen Quellen nicht klären liess.
+Quellen: die Adressen der Seiten, auf die du dich stützt.
+
+Halte dich kurz, insgesamt etwa 150 bis 250 Wörter, denn die Karte ist klein. Nenne Tatsachen und woher sie stammen. Gib keine Empfehlung zum Kaufen, Halten oder Verkaufen, kein Kursziel und keine Bewertung in Sternen oder Noten: Die Einschätzung ist Sache der Person, die das Board führt, und das Board ist keine Anlageberatung.
+
+Rufe am Ende das Werkzeug karte_speichern auf, um das Ergebnis zu speichern.`;
+
+const readAiKey = () => {
+  try { return localStorage.getItem(AI_KEY) || ''; } catch { return ''; }
+};
+
+function apiErrorText(status, body) {
+  const detail = body && body.error && body.error.message ? body.error.message : '';
+  if (status === 401) return 'Der API-Schlüssel wurde abgelehnt. Prüfe ihn unter „KI-Recherche“.';
+  if (status === 403) return 'Der API-Schlüssel hat keine Berechtigung für diese Anfrage.' + (detail ? ' ' + detail : '');
+  if (status === 429) return 'Das Limit deines Anthropic-Kontos ist erreicht. Versuch es später nochmals.';
+  if (status >= 500) return 'Claude ist gerade nicht erreichbar oder überlastet. Versuch es später nochmals.';
+  return `Claude meldet einen Fehler (${status})` + (detail ? ': ' + detail : '.');
+}
+
+async function callClaude(key, messages) {
+  let response;
+  try {
+    response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'server-side-fallback-2026-07-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-opus-5-5',
+        max_tokens: 16000,
+        output_config: { effort: 'medium' },
+        fallbacks: 'default',
+        system: RESEARCH_SYSTEM,
+        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 8 }, RESEARCH_TOOL],
+        messages,
+      }),
+    });
+  } catch {
+    throw new Error('Keine Verbindung zu Claude. Prüfe deine Internetverbindung.');
+  }
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(apiErrorText(response.status, body));
+  if (!body || !Array.isArray(body.content)) throw new Error('Claude hat eine unlesbare Antwort geschickt.');
+  return body;
+}
+
+async function researchCompany(company, key) {
+  const known = [company.sector && `Bereits notierte Branche: ${company.sector}`, company.url && `Bereits notierter Link: ${company.url}`].filter(Boolean);
+  const messages = [{ role: 'user', content: [`Unternehmen: ${company.name}`, ...known, `Heutiges Datum: ${today()}`].join('\n') }];
+  for (let turn = 0; turn < 6; turn++) {
+    const message = await callClaude(key, messages);
+    if (message.stop_reason === 'refusal') throw new Error('Claude hat diese Recherche abgelehnt.');
+    const call = message.content.find(block => block.type === 'tool_use' && block.name === RESEARCH_TOOL.name);
+    if (call && call.input && typeof call.input.notizen === 'string') return call.input;
+    if (message.stop_reason === 'max_tokens') throw new Error('Die Antwort war zu lang und wurde abgeschnitten.');
+    if (message.stop_reason === 'pause_turn') {
+      messages.push({ role: 'assistant', content: message.content });
+      continue;
+    }
+    const text = message.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim();
+    if (text) return { branche: '', link: '', notizen: text };
+    throw new Error('Claude hat kein Ergebnis geliefert.');
+  }
+  throw new Error('Die Recherche ist nicht fertig geworden.');
+}
+
+async function startResearch(id) {
+  const key = readAiKey();
+  if (!key) {
+    pendingResearchId = id;
+    openAiSettings();
+    return;
+  }
+  const company = companies.find(c => c.id === id);
+  if (!company || researching.has(id)) return;
+  researching.add(id);
+  render();
+  $('live').textContent = `Recherche zu ${company.name} läuft`;
+  try {
+    const result = await researchCompany(company, key);
+    researching.delete(id);
+    const target = companies.find(c => c.id === id);
+    if (!target) return;
+    const before = { sector: target.sector, url: target.url, notes: target.notes };
+    const block = `Recherche vom ${today()} (Claude):\n${result.notizen.trim()}`;
+    if (!target.sector && typeof result.branche === 'string') target.sector = result.branche.trim();
+    if (!target.url) target.url = cleanUrl(result.link);
+    target.notes = target.notes ? `${target.notes}\n\n${block}` : block;
+    save();
+    render();
+    $('live').textContent = `Recherche zu ${target.name} übernommen`;
+    offerUndo(`Recherche zu „${target.name}“ übernommen`, () => {
+      const current = companies.find(c => c.id === id);
+      if (!current) return;
+      Object.assign(current, before);
+      save();
+      render();
+      $('live').textContent = `Recherche zu ${current.name} zurückgenommen`;
+    });
+  } catch (error) {
+    researching.delete(id);
+    render();
+    offerUndo(`Recherche zu „${company.name}“ fehlgeschlagen. ${error.message}`);
+  }
+}
+
+function openAiSettings() {
+  const key = readAiKey();
+  $('aiKey').value = '';
+  $('aiState').textContent = key ? `Ein Schlüssel ist gespeichert (endet auf …${key.slice(-4)}).` : 'Es ist noch kein Schlüssel gespeichert.';
+  $('aiDelete').hidden = !key;
+  $('ai').showModal();
+}
+
+$('aiOpen').addEventListener('click', () => {
+  pendingResearchId = null;
+  openAiSettings();
+});
+$('aiClose').addEventListener('click', () => $('ai').close());
+$('aiDelete').addEventListener('click', () => {
+  try { localStorage.removeItem(AI_KEY); } catch {}
+  $('ai').close();
+  $('live').textContent = 'API-Schlüssel gelöscht';
+});
+$('aiForm').addEventListener('submit', () => {
+  const key = $('aiKey').value.trim();
+  $('aiKey').value = '';
+  if (!key) return;
+  try { localStorage.setItem(AI_KEY, key); } catch {}
+  $('live').textContent = 'API-Schlüssel gespeichert';
+  if (pendingResearchId) startResearch(pendingResearchId);
+});
+$('ai').addEventListener('close', () => { pendingResearchId = null; });
 
 const cardFor = id => [...document.querySelectorAll('.card')].find(node => node.dataset.id === id);
 
