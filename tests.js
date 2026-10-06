@@ -43,6 +43,7 @@
     hideUndo();
     endTouchDrag();
     $('search').value = '';
+    $('minRating').value = '0';
     companies = seed();
     realSave();
     render();
@@ -359,6 +360,31 @@
     $('search').value = '';
     $('search').dispatchEvent(new Event('input'));
     equal(col('offen'), 'abc', 'Ohne Suchbegriff');
+  });
+
+  await test('Filter nach Bewertung', () => {
+    const choose = value => {
+      $('minRating').value = value;
+      $('minRating').dispatchEvent(new Event('change'));
+    };
+    choose('4');
+    equal(col('offen'), 'b', 'Offen ab 4 Sternen');
+    equal(col('fertig'), 'y', 'Fertig ab 4 Sternen');
+    equal(columnOf('offen').querySelector('.count').textContent, '1', 'Zähler');
+    equal(columnOf('arbeit').querySelector('.empty').textContent, 'Keine Treffer', 'Hinweis in der leeren Spalte');
+    equal(live(), '2 von 5 Unternehmen angezeigt', 'Ansage');
+    choose('5');
+    equal(col('offen') + col('fertig'), 'b', 'Nur 5 Sterne');
+    choose('2');
+    equal(col('offen') + col('fertig'), 'abcy', 'Ab 2 Sternen');
+    $('search').value = 'firma c';
+    $('search').dispatchEvent(new Event('input'));
+    equal(col('offen') + col('fertig'), 'c', 'Filter und Suche zusammen');
+    $('search').value = '';
+    choose('0');
+    equal(col('offen') + col('fertig'), 'abcxy', 'Alle Bewertungen');
+    equal(columnOf('arbeit').querySelector('.empty').textContent, 'Karte hierher ziehen', 'Hinweis ohne Filter');
+    equal(saves, 0, 'Filtern speichert nichts');
   });
 
   await test('Export enthält alle Daten und das Datum im Namen', async () => {
