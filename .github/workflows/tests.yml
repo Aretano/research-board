@@ -20,5 +20,5 @@ jobs:
         run: |
           npm install --no-save playwright
           npx playwright install --with-deps chromium
-      - name: Run tests.js in headless Chromium
+      - name: Run tests.js and the app checks in headless Chromium
         run: node .github/run-tests.mjs
