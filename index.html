@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Firmen-Research-Board</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="favicon.ico">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#2f6fed">
 <style>
   :root {
     --bg: #f4f5f7; --panel: #ffffff; --col: #e9ebef; --text: #1c2230; --muted: #667085;
@@ -654,6 +658,7 @@ board.addEventListener('touchcancel', endTouchDrag);
 render();
 updateBackupButton();
 if (loadNotice) offerUndo(loadNotice);
+if (!TEST_MODE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 if (TEST_MODE) document.body.append(Object.assign(el('script'), { src: 'tests.js' }));
 </script>
 </body>

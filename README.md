@@ -6,6 +6,8 @@ Ein kleines Kanban-Board, um Unternehmen während der Recherche zu verfolgen. Di
 
 Im Internet: <https://aretano.github.io/research-board/> – auch auf dem Handy.
 
+Als App: Die Seite in Edge oder Chrome öffnen und über das Menü «Apps → Diese Website als App installieren» (Edge) bzw. «Speichern und teilen → Seite als App installieren» (Chrome) installieren; auf dem Handy «Zum Startbildschirm hinzufügen». Die App hat ein eigenes Fenster und Symbol und startet nach dem ersten Öffnen auch ohne Internet.
+
 Oder lokal: `index.html` im Browser öffnen (Doppelklick genügt).
 
 Die Einträge liegen in beiden Fällen nur im jeweiligen Browser. Die Internet-Adresse und die lokale Datei haben getrennte Daten, ebenso jedes Gerät; zum Übertragen **Export (JSON)** und **Import (JSON)** verwenden.
