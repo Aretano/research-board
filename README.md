@@ -4,7 +4,11 @@ Ein kleines Kanban-Board, um Unternehmen während der Recherche zu verfolgen. Di
 
 ## Starten
 
-`index.html` im Browser öffnen (Doppelklick genügt).
+Im Internet: <https://aretano.github.io/research-board/> – auch auf dem Handy.
+
+Oder lokal: `index.html` im Browser öffnen (Doppelklick genügt).
+
+Die Einträge liegen in beiden Fällen nur im jeweiligen Browser. Die Internet-Adresse und die lokale Datei haben getrennte Daten, ebenso jedes Gerät; zum Übertragen **Export (JSON)** und **Import (JSON)** verwenden.
 
 ## Funktionen
 
@@ -28,7 +32,9 @@ Ein kleines Kanban-Board, um Unternehmen während der Recherche zu verfolgen. Di
 
 `tests.html` im Browser öffnen. Die Seite lädt das Board im Testmodus (`index.html?test`), spielt die wichtigsten Abläufe durch und zeigt nach wenigen Sekunden oben rechts, welche Tests bestanden haben. Der Tab muss dabei sichtbar bleiben; im Hintergrund warten die Tests. Im Testmodus verwendet das Board einen eigenen Speicherschlüssel (`research-board-test`); die echten Einträge bleiben unberührt. Die Tests selbst stehen in `tests.js`.
 
-Auf GitHub laufen dieselben Tests automatisch bei jedem Pull Request und bei jedem Push auf `main` (Workflow `.github/workflows/tests.yml`). Das Ergebnis erscheint als Haken oder Kreuz am Pull Request.
+Auf GitHub laufen dieselben Tests automatisch bei jedem Pull Request (Workflow `.github/workflows/tests.yml`). Das Ergebnis erscheint als Haken oder Kreuz am Pull Request.
+
+Bei jedem Push auf `main` laufen die Tests nochmals; nur wenn sie bestehen, wird die Seite unter <https://aretano.github.io/research-board/> neu veröffentlicht (Workflow `.github/workflows/pages.yml`).
 
 ## Daten
 
