@@ -24,6 +24,7 @@
     background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%;
   }
   header input[type=search] { width: 220px; }
+  header select { width: auto; }
   button { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 8px 14px; cursor: pointer; }
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
   button.danger { color: var(--danger); margin-right: auto; }
@@ -78,6 +79,14 @@
 <header>
   <h1>Firmen-Research-Board</h1>
   <input type="search" id="search" placeholder="Suchen …" aria-label="Suchen">
+  <select id="minRating" aria-label="Nach Bewertung filtern">
+    <option value="0">Alle Bewertungen</option>
+    <option value="1">ab ★</option>
+    <option value="2">ab ★★</option>
+    <option value="3">ab ★★★</option>
+    <option value="4">ab ★★★★</option>
+    <option value="5">nur ★★★★★</option>
+  </select>
   <button id="helpOpen" aria-haspopup="dialog">Tastenkürzel</button>
   <button id="import">Import (JSON)</button>
   <input type="file" id="importFile" accept="application/json,.json" hidden>
@@ -190,13 +199,14 @@ function el(tag, className, text) {
 
 function render() {
   const query = $('search').value.trim().toLowerCase();
+  const minRating = +$('minRating').value;
   document.querySelectorAll('.column').forEach(column => {
     const list = column.querySelector('.cards');
-    const items = companies.filter(c => c.status === column.dataset.status &&
+    const items = companies.filter(c => c.status === column.dataset.status && c.rating >= minRating &&
       (c.name + ' ' + c.sector + ' ' + c.notes + ' ' + (c.url || '')).toLowerCase().includes(query));
     list.replaceChildren();
     column.querySelector('.count').textContent = items.length;
-    if (!items.length) list.append(el('div', 'empty', query ? 'Keine Treffer' : 'Karte hierher ziehen'));
+    if (!items.length) list.append(el('div', 'empty', query || minRating ? 'Keine Treffer' : 'Karte hierher ziehen'));
     items.forEach(c => {
       const card = el('div', 'card');
       card.draggable = true;
@@ -418,6 +428,10 @@ document.addEventListener('keydown', e => {
 $('cancel').addEventListener('click', () => $('dialog').close());
 $('add').addEventListener('click', () => openDialog(null));
 $('search').addEventListener('input', render);
+$('minRating').addEventListener('change', () => {
+  render();
+  $('live').textContent = `${document.querySelectorAll('.card').length} von ${companies.length} Unternehmen angezeigt`;
+});
 $('fRating').addEventListener('input', () => $('fStars').textContent = stars(+$('fRating').value));
 $('fUrl').addEventListener('input', () => {
   const valid = !$('fUrl').value.trim() || cleanUrl($('fUrl').value);

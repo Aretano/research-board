@@ -19,6 +19,7 @@ Ein kleines Kanban-Board, um Unternehmen während der Recherche zu verfolgen. Di
 - Löschen und Sortieren rückgängig machen: 10 Sekunden lang über «Rückgängig» in der Meldung am unteren Rand oder mit Strg+Z
 - Übersicht aller Tastenkürzel im Board: Knopf «Tastenkürzel» oder Taste `?`
 - Suche über Name, Branche, Notizen und Link
+- Filter nach Bewertung: nur Karten ab einer gewählten Sternezahl anzeigen, auch zusammen mit der Suche
 - Export aller Einträge als JSON-Datei mit Datum im Namen, z. B. `research-board-2026-10-05.json`
 - Import einer solchen JSON-Datei: neue Unternehmen kommen dazu, bereits vorhandene werden nach Rückfrage mit dem Stand aus der Datei überschrieben, alles andere bleibt
 - Helles und dunkles Design, je nach Systemeinstellung
