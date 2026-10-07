@@ -40,6 +40,8 @@ Dafür braucht es einen eigenen Anthropic-API-Schlüssel (getrennt von einem Cla
 - Wer Zugriff auf dieses Browserprofil hat, kann den Schlüssel auslesen. Auf einem geteilten Gerät den Schlüssel nach Gebrauch wieder löschen und in der Anthropic-Konsole ein Ausgabenlimit setzen.
 - Jede Recherche wird dem Anthropic-Konto verrechnet (Modell `claude-opus-5-5` mit Websuche).
 
+Unter **KI-Recherche** lässt sich eine eigene **Checkliste** hinterlegen, ein Punkt pro Zeile. Claude beantwortet dann genau diese Punkte in dieser Reihenfolge, jeden unter eigener Überschrift, und schreibt «Nicht gefunden», wo sich nichts belegen lässt. Ohne Checkliste gilt die oben genannte Standard-Gliederung. Die Checkliste liegt wie der Schlüssel nur in diesem Browser und ist nicht Teil des Exports. Sie gilt für neue Recherchen; bereits recherchierte Karten ändern sich nicht von selbst.
+
 Unter **KI-Recherche** lässt sich ausserdem «Täglich um 20.00 Uhr automatisch recherchieren» einschalten. Die App recherchiert dann nacheinander bis zu 10 Karten in «Offen», die noch keine Recherche haben, und meldet am Ende, wie viele es waren. Dafür muss die App um 20.00 Uhr offen sein; wird sie am selben Abend erst später geöffnet, holt sie den Durchlauf nach. Ein verpasster Abend wird am nächsten Tag nicht nachgeholt. Beim ersten Fehler, etwa einem abgelehnten Schlüssel, hört der Durchlauf auf. Mit «Jetzt bis zu 10 Karten recherchieren» lässt sich derselbe Durchlauf jederzeit von Hand starten.
 
 ## Tests
