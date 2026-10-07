@@ -119,6 +119,8 @@
     <label>Anthropic-API-Schlüssel<input type="password" id="aiKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></label>
     <p id="aiState"></p>
     <p class="hint">Den Schlüssel erstellst du in der <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Anthropic-Konsole</a>. Er wird nur in diesem Browser gespeichert und nur an api.anthropic.com gesendet; er ist nicht Teil von Export oder Sicherungskopie. Jede Recherche wird deinem Anthropic-Konto verrechnet.</p>
+    <label>Meine Checkliste (ein Punkt pro Zeile)<textarea id="aiChecklist" maxlength="4000" placeholder="Eigenkapitalquote&#10;Dividende der letzten fünf Jahre&#10;Wichtigste Konkurrenten"></textarea></label>
+    <p class="hint">Steht hier etwas, beantwortet Claude genau diese Punkte in dieser Reihenfolge und schreibt «Nicht gefunden», wo sich nichts belegen lässt. Ohne Checkliste gibt es die Standard-Gliederung. Die Liste wird beim Tippen gespeichert, nur in diesem Browser.</p>
     <label class="check"><input type="checkbox" id="aiAuto"> Täglich um 20.00 Uhr automatisch recherchieren</label>
     <p class="hint">Recherchiert dann nacheinander bis zu 10 Karten in «Offen», die noch keine Recherche haben. Die App muss dafür offen sein; öffnest du sie am selben Abend erst später, holt sie den Durchlauf nach. Jede Karte wird verrechnet wie eine Recherche von Hand.</p>
     <p id="aiAutoState" class="hint"></p>
@@ -200,6 +202,7 @@ const STORAGE_KEY = TEST_MODE ? 'research-board-test' : 'research-board-v1';
 const BACKUP_KEY = STORAGE_KEY + '-backup';
 const AI_KEY = TEST_MODE ? 'research-board-test-claude-key' : 'research-board-claude-key';
 const AUTO_KEY = AI_KEY + '-auto';
+const CHECKLIST_KEY = AI_KEY + '-checklist';
 const AUTO_HOUR = 20;
 const AUTO_LIMIT = 10;
 const RESEARCH_MARK = /Recherche vom \d{4}-\d{2}-\d{2} \(Claude\)/;
@@ -424,14 +427,18 @@ const RESEARCH_SYSTEM = `Du recherchierst Unternehmen für ein persönliches Res
 
 Suche im Internet nach dem genannten Unternehmen und stütze dich auf verlässliche Quellen: die Website des Unternehmens, Geschäftsberichte, Mitteilungen an Investoren, Handelsregister und anerkannte Wirtschaftsmedien. Wenn es mehrere Unternehmen mit diesem Namen gibt, nimm das bekannteste und halte in den Notizen fest, welches du gewählt hast. Findest du das Unternehmen nicht, sag das in den Notizen, statt etwas zu vermuten.
 
-Schreibe die Notizen auf Deutsch als reinen Text mit diesen Abschnitten, jeder mit einer kurzen Überschrift auf einer eigenen Zeile:
+Schreibe die Notizen auf Deutsch als reinen Text.
+
+Enthält die Anfrage eine Checkliste, dann ist sie der Massstab für diese Recherche, denn die Person hat sie selbst zusammengestellt und prüft jedes Unternehmen daran. Behandle jeden Punkt in der vorgegebenen Reihenfolge: den Punkt als Überschrift auf einer eigenen Zeile, darunter ein bis drei Sätze mit dem, was du dazu belegen kannst, bei Zahlen mit Jahr und Währung. Lass keinen Punkt aus. Findest du zu einem Punkt nichts Verlässliches, schreib «Nicht gefunden» und in einem Halbsatz, wo du gesucht hast, damit die Person weiss, dass der Punkt geprüft wurde. Schliesse mit einem Abschnitt «Quellen» mit den Adressen der Seiten, auf die du dich stützt.
+
+Ohne Checkliste gliedere die Notizen in diese Abschnitte, jeder mit einer kurzen Überschrift auf einer eigenen Zeile, insgesamt etwa 150 bis 250 Wörter:
 Geschäftsmodell: womit das Unternehmen Geld verdient, wichtigste Sparten und Märkte.
 Kennzahlen: Umsatz, Gewinn oder Marge und Zahl der Mitarbeitenden, jeweils mit Jahr und Währung. Lass eine Kennzahl weg, wenn du sie nicht belegen kannst.
 Besonderheiten und Risiken: was das Unternehmen auszeichnet und was es gefährden könnte.
 Offene Fragen: was sich aus öffentlichen Quellen nicht klären liess.
 Quellen: die Adressen der Seiten, auf die du dich stützt.
 
-Halte dich kurz, insgesamt etwa 150 bis 250 Wörter, denn die Karte ist klein. Nenne Tatsachen und woher sie stammen. Gib keine Empfehlung zum Kaufen, Halten oder Verkaufen, kein Kursziel und keine Bewertung in Sternen oder Noten: Die Einschätzung ist Sache der Person, die das Board führt, und das Board ist keine Anlageberatung.
+Nenne Tatsachen und woher sie stammen. Gib keine Empfehlung zum Kaufen, Halten oder Verkaufen, kein Kursziel und keine Bewertung in Sternen oder Noten: Die Einschätzung ist Sache der Person, die das Board führt, und das Board ist keine Anlageberatung. Verlangt ein Punkt der Checkliste ein solches Urteil, liefere die Tatsachen, die dafür wichtig sind, und überlasse das Urteil der Person.
 
 Rufe am Ende das Werkzeug karte_speichern auf, um das Ergebnis zu speichern.`;
 
@@ -448,7 +455,11 @@ function apiErrorText(status, body) {
   return `Claude meldet einen Fehler (${status})` + (detail ? ': ' + detail : '.');
 }
 
-async function callClaude(key, messages) {
+const readChecklist = () => {
+  try { return (localStorage.getItem(CHECKLIST_KEY) || '').split('\n').map(line => line.trim()).filter(Boolean); } catch { return []; }
+};
+
+async function callClaude(key, messages, searches) {
   let response;
   try {
     response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -466,7 +477,7 @@ async function callClaude(key, messages) {
         output_config: { effort: 'medium' },
         fallbacks: 'default',
         system: RESEARCH_SYSTEM,
-        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 8 }, RESEARCH_TOOL],
+        tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: searches }, RESEARCH_TOOL],
         messages,
       }),
     });
@@ -481,9 +492,11 @@ async function callClaude(key, messages) {
 
 async function researchCompany(company, key) {
   const known = [company.sector && `Bereits notierte Branche: ${company.sector}`, company.url && `Bereits notierter Link: ${company.url}`].filter(Boolean);
-  const messages = [{ role: 'user', content: [`Unternehmen: ${company.name}`, ...known, `Heutiges Datum: ${today()}`].join('\n') }];
+  const checklist = readChecklist();
+  const points = checklist.length ? ['', 'Checkliste:', ...checklist.map((point, i) => `${i + 1}. ${point}`)] : [];
+  const messages = [{ role: 'user', content: [`Unternehmen: ${company.name}`, ...known, `Heutiges Datum: ${today()}`, ...points].join('\n') }];
   for (let turn = 0; turn < 6; turn++) {
-    const message = await callClaude(key, messages);
+    const message = await callClaude(key, messages, checklist.length ? 16 : 8);
     if (message.stop_reason === 'refusal') throw new Error('Claude hat diese Recherche abgelehnt.');
     const call = message.content.find(block => block.type === 'tool_use' && block.name === RESEARCH_TOOL.name);
     if (call && call.input && typeof call.input.notizen === 'string') return call.input;
@@ -585,11 +598,15 @@ function openAiSettings() {
   $('aiDelete').hidden = !key;
   const auto = readAuto();
   $('aiAuto').checked = auto.enabled;
+  try { $('aiChecklist').value = localStorage.getItem(CHECKLIST_KEY) || ''; } catch {}
   $('aiAutoState').textContent = auto.lastRun ? `Letzter automatischer Durchlauf: ${auto.lastRun}.` : 'Es gab noch keinen automatischen Durchlauf.';
   $('ai').showModal();
 }
 
 $('aiAuto').addEventListener('change', () => writeAuto({ ...readAuto(), enabled: $('aiAuto').checked }));
+$('aiChecklist').addEventListener('input', () => {
+  try { localStorage.setItem(CHECKLIST_KEY, $('aiChecklist').value); } catch {}
+});
 $('aiRunNow').addEventListener('click', () => {
   if (!readAiKey()) {
     $('aiState').textContent = 'Dafür braucht es zuerst einen Schlüssel.';

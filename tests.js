@@ -43,6 +43,7 @@
     localStorage.removeItem(BACKUP_KEY);
     localStorage.removeItem(AI_KEY);
     localStorage.removeItem(AUTO_KEY);
+    localStorage.removeItem(CHECKLIST_KEY);
     researching.clear();
     pendingResearchId = null;
     autoRunning = false;
@@ -695,6 +696,35 @@
     equal(companies[0].notes.split('Recherche vom').length - 1, 1, 'Eingetragene Recherchen');
   });
 
+  await test('Eigene Checkliste wird gespeichert und mit jeder Recherche mitgeschickt', async () => {
+    localStorage.setItem(AI_KEY, 'test-schluessel');
+    $('aiOpen').click();
+    equal($('aiChecklist').value, '', 'Anfangs leer');
+    $('aiChecklist').value = 'Eigenkapitalquote\n\n   Dividende der letzten fünf Jahre  \nWichtigste Konkurrenten\n';
+    $('aiChecklist').dispatchEvent(new Event('input'));
+    await untilClosed(() => $('aiClose').click(), $('ai'));
+    $('aiOpen').click();
+    assert($('aiChecklist').value.startsWith('Eigenkapitalquote\n'), 'Checkliste steht nach erneutem Öffnen wieder da');
+    await untilClosed(() => $('aiClose').click(), $('ai'));
+
+    const withList = stubClaude(saveCall(found));
+    try { await startResearch('a'); } finally { withList.restore(); }
+    const content = withList.calls[0].body.messages[0].content;
+    assert(content.endsWith('\n\nCheckliste:\n1. Eigenkapitalquote\n2. Dividende der letzten fünf Jahre\n3. Wichtigste Konkurrenten'), `Nachricht „${content}“`);
+    equal(withList.calls[0].body.tools[0].max_uses, 16, 'Mehr Suchen mit Checkliste');
+    assert(withList.calls[0].body.system.includes('Lass keinen Punkt aus.'), 'Auftrag verlangt jeden Punkt der Checkliste');
+    assert(withList.calls[0].body.system.includes('«Nicht gefunden»'), 'Auftrag verlangt einen Vermerk, wenn nichts zu finden ist');
+
+    const file = await captureDownload(() => $('export').click());
+    assert(!file.text.includes('Eigenkapitalquote'), 'Checkliste steht nicht im Export');
+
+    localStorage.removeItem(CHECKLIST_KEY);
+    const withoutList = stubClaude(saveCall(found));
+    try { await startResearch('b'); } finally { withoutList.restore(); }
+    assert(!withoutList.calls[0].body.messages[0].content.includes('Checkliste'), 'Ohne Checkliste steht keine in der Nachricht');
+    equal(withoutList.calls[0].body.tools[0].max_uses, 8, 'Suchen ohne Checkliste');
+  });
+
   await test('Automatische Recherche startet erst ab 20 Uhr und nur einmal pro Abend', async () => {
     const at = (day, hour, minute) => new Date(2026, 9, day, hour, minute);
     const claude = stubClaude(saveCall(found), saveCall(found), saveCall(found), saveCall(found), saveCall(found), saveCall(found));
@@ -841,6 +871,7 @@
     localStorage.removeItem(BACKUP_KEY);
     localStorage.removeItem(AI_KEY);
     localStorage.removeItem(AUTO_KEY);
+    localStorage.removeItem(CHECKLIST_KEY);
     localStorage.removeItem(STORAGE_KEY);
   } catch {}
   updateBackupButton();
