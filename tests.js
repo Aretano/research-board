@@ -42,8 +42,10 @@
     for (const dialog of [$('dialog'), $('help'), $('backup'), $('ai')]) if (dialog.open) await untilClosed(() => dialog.close(), dialog);
     localStorage.removeItem(BACKUP_KEY);
     localStorage.removeItem(AI_KEY);
+    localStorage.removeItem(AUTO_KEY);
     researching.clear();
     pendingResearchId = null;
+    autoRunning = false;
     updateBackupButton();
     hideUndo();
     endTouchDrag();
@@ -693,6 +695,90 @@
     equal(companies[0].notes.split('Recherche vom').length - 1, 1, 'Eingetragene Recherchen');
   });
 
+  await test('Automatische Recherche startet erst ab 20 Uhr und nur einmal pro Abend', async () => {
+    const at = (day, hour, minute) => new Date(2026, 9, day, hour, minute);
+    const claude = stubClaude(saveCall(found), saveCall(found), saveCall(found), saveCall(found), saveCall(found), saveCall(found));
+    try {
+      equal(checkAutoResearch(at(7, 20, 5)), null, 'Ausgeschaltet');
+      localStorage.setItem(AUTO_KEY, JSON.stringify({ enabled: true, lastRun: '' }));
+      equal(checkAutoResearch(at(7, 20, 5)), null, 'Ohne Schlüssel');
+      localStorage.setItem(AI_KEY, 'test-schluessel');
+      equal(checkAutoResearch(at(7, 19, 59)), null, 'Um 19.59 Uhr');
+      equal(claude.calls.length, 0, 'Anfragen vor 20 Uhr');
+      await checkAutoResearch(at(7, 20, 0));
+      equal(claude.calls.length, 3, 'Anfragen um 20.00 Uhr: die drei Karten in Offen');
+      equal(JSON.parse(localStorage.getItem(AUTO_KEY)).lastRun, '2026-10-07', 'Gemerkter Durchlauf');
+      equal(checkAutoResearch(at(7, 23, 30)), null, 'Später am selben Abend');
+      equal(checkAutoResearch(at(8, 9, 0)), null, 'Am nächsten Morgen');
+      companies.push(mk('neu', 'offen', 0));
+      await checkAutoResearch(at(8, 21, 15));
+      equal(claude.calls.length, 4, 'Am nächsten Abend nur die neue Karte');
+      equal(claude.calls[3].body.messages[0].content.split('\n')[0], 'Unternehmen: Firma NEU', 'Recherchierte Karte');
+    } finally { claude.restore(); }
+    equal($('toastText').textContent, '1 Karte in „Offen“ recherchiert.', 'Meldung');
+    equal($('undo').textContent, 'OK', 'Meldung bleibt stehen, bis sie bestätigt wird');
+  });
+
+  await test('Automatische Recherche nimmt höchstens 10 Karten aus Offen, eine nach der anderen', async () => {
+    localStorage.setItem(AI_KEY, 'test-schluessel');
+    localStorage.setItem(AUTO_KEY, JSON.stringify({ enabled: true, lastRun: '' }));
+    companies = [...Array(12)].map((_, i) => mk('o' + i, 'offen', 0));
+    companies[1].notes = 'Recherche vom 2026-10-01 (Claude):\nSchon erledigt.';
+    companies.push(mk('w', 'arbeit', 0), mk('f', 'fertig', 0));
+    render();
+    let parallel = 0, maxParallel = 0;
+    const realFetch = window.fetch, calls = [];
+    window.fetch = async (url, init) => {
+      calls.push(JSON.parse(init.body).messages[0].content.split('\n')[0]);
+      maxParallel = Math.max(maxParallel, ++parallel);
+      await wait(5);
+      parallel--;
+      return new Response(JSON.stringify(saveCall(found).body), { status: 200 });
+    };
+    try { await checkAutoResearch(new Date(2026, 9, 7, 20, 30)); } finally { window.fetch = realFetch; }
+    equal(calls.length, 10, 'Anfragen');
+    equal(maxParallel, 1, 'Gleichzeitige Anfragen');
+    equal(calls.join(','), [0, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => 'Unternehmen: Firma O' + i).join(','), 'Reihenfolge und Auswahl');
+    assert(!RESEARCH_MARK.test(companies.find(c => c.id === 'o11').notes), 'Die elfte offene Karte wartet bis zum nächsten Abend');
+    assert(!companies.find(c => c.id === 'w').notes && !companies.find(c => c.id === 'f').notes, 'Andere Spalten bleiben unberührt');
+    equal($('toastText').textContent, '10 Karten in „Offen“ recherchiert.', 'Meldung');
+  });
+
+  await test('Automatische Recherche hört beim ersten Fehler auf', async () => {
+    localStorage.setItem(AI_KEY, 'test-schluessel');
+    localStorage.setItem(AUTO_KEY, JSON.stringify({ enabled: true, lastRun: '' }));
+    const claude = stubClaude(saveCall(found), { status: 401, body: { error: { message: 'invalid x-api-key' } } });
+    try { await checkAutoResearch(new Date(2026, 9, 7, 20, 30)); } finally { claude.restore(); }
+    equal(claude.calls.length, 2, 'Anfragen');
+    assert(RESEARCH_MARK.test(companies[0].notes), 'Erste Karte ist recherchiert');
+    equal(companies[1].notes + companies[2].notes, '', 'Weitere Karten unverändert');
+    assert($('toastText').textContent.startsWith('Recherche nach 1 von 3 Karten abgebrochen. Der API-Schlüssel wurde abgelehnt.'), `Meldung „${$('toastText').textContent}“`);
+    equal(checkAutoResearch(new Date(2026, 9, 7, 20, 31)), null, 'Kein neuer Versuch am selben Abend');
+  });
+
+  await test('Automatische Recherche: Einstellung und «Jetzt recherchieren»', async () => {
+    $('aiOpen').click();
+    assert(!$('aiAuto').checked, 'Anfangs ausgeschaltet');
+    equal($('aiAutoState').textContent, 'Es gab noch keinen automatischen Durchlauf.', 'Stand');
+    $('aiAuto').click();
+    equal(JSON.parse(localStorage.getItem(AUTO_KEY)).enabled, true, 'Einstellung gespeichert');
+    $('aiRunNow').click();
+    assert($('ai').open, 'Ohne Schlüssel bleibt der Dialog offen');
+    equal($('aiState').textContent, 'Dafür braucht es zuerst einen Schlüssel.', 'Hinweis');
+    localStorage.setItem(AI_KEY, 'test-schluessel');
+    const claude = stubClaude(saveCall(found), saveCall(found), saveCall(found));
+    try {
+      await untilClosed(() => $('aiRunNow').click(), $('ai'));
+      await until(() => !autoRunning, 'Durchlauf von Hand');
+    } finally { claude.restore(); }
+    equal(claude.calls.length, 3, 'Anfragen');
+    equal(readAuto().lastRun, '', 'Ein Durchlauf von Hand ersetzt den abendlichen nicht');
+    await runAutoResearch(null);
+    equal($('toastText').textContent, 'In „Offen“ gibt es keine Karte ohne Recherche.', 'Meldung ohne passende Karte');
+    $('aiOpen').click();
+    assert($('aiAuto').checked, 'Einstellung bleibt nach erneutem Öffnen');
+  });
+
   await test('Beschädigte Einträge werden beim Laden übersprungen', () => {
     const raw = JSON.stringify([mk('a', 'offen', 2), { foo: 1 }, null, { id: 'm', name: 'Messy', status: 'quatsch', rating: 99 }, mk('a', 'fertig', 1)]);
     localStorage.setItem(STORAGE_KEY, raw);
@@ -754,6 +840,7 @@
   try {
     localStorage.removeItem(BACKUP_KEY);
     localStorage.removeItem(AI_KEY);
+    localStorage.removeItem(AUTO_KEY);
     localStorage.removeItem(STORAGE_KEY);
   } catch {}
   updateBackupButton();

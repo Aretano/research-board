@@ -40,6 +40,8 @@ Dafür braucht es einen eigenen Anthropic-API-Schlüssel (getrennt von einem Cla
 - Wer Zugriff auf dieses Browserprofil hat, kann den Schlüssel auslesen. Auf einem geteilten Gerät den Schlüssel nach Gebrauch wieder löschen und in der Anthropic-Konsole ein Ausgabenlimit setzen.
 - Jede Recherche wird dem Anthropic-Konto verrechnet (Modell `claude-opus-5-5` mit Websuche).
 
+Unter **KI-Recherche** lässt sich ausserdem «Täglich um 20.00 Uhr automatisch recherchieren» einschalten. Die App recherchiert dann nacheinander bis zu 10 Karten in «Offen», die noch keine Recherche haben, und meldet am Ende, wie viele es waren. Dafür muss die App um 20.00 Uhr offen sein; wird sie am selben Abend erst später geöffnet, holt sie den Durchlauf nach. Ein verpasster Abend wird am nächsten Tag nicht nachgeholt. Beim ersten Fehler, etwa einem abgelehnten Schlüssel, hört der Durchlauf auf. Mit «Jetzt bis zu 10 Karten recherchieren» lässt sich derselbe Durchlauf jederzeit von Hand starten.
+
 ## Tests
 
 `tests.html` im Browser öffnen. Die Seite lädt das Board im Testmodus (`index.html?test`), spielt die wichtigsten Abläufe durch und zeigt nach wenigen Sekunden oben rechts, welche Tests bestanden haben. Der Tab muss dabei sichtbar bleiben; im Hintergrund warten die Tests. Im Testmodus verwendet das Board einen eigenen Speicherschlüssel (`research-board-test`); die echten Einträge bleiben unberührt. Die Tests selbst stehen in `tests.js`.
